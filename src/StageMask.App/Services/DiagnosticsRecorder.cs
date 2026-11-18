@@ -76,6 +76,7 @@ internal sealed class DiagnosticsRecorder
             DetectionMasks = c.DetectionMaskCount,
             PendingMasks = c.PendingMaskCount,
             ScrollMasks = c.ScrollMaskCount,
+            VideoWindows = c.VideoWindowCount,
             FailClosed = c.FailClosedCount,
             OcrCycleMs = (int)c.WorkerCycle.TotalMilliseconds,
             CheckRoundMs = (int)c.CheckRound.TotalMilliseconds,

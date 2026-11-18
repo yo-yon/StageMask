@@ -72,3 +72,58 @@ public class ClockTileTests
     [Fact]
     public void Setting_IsOnByDefault() => Assert.True(new StageMask.Core.Settings.DetectionSettings().IgnoreClockChanges);
 }
+
+/// <summary>v0.5.12: スクロールと動画を見分ける</summary>
+public class ShiftEstimateTests
+{
+    private const int W = 192, H = 192;
+
+    private static byte[] Text(int offsetY)
+    {
+        var px = new byte[W * H * 4];
+        for (int i = 0; i < px.Length; i++) px[i] = 255;
+        for (int line = 0; line < 12; line++)
+        {
+            int y0 = 8 + line * 16 - offsetY;
+            for (int y = y0; y < y0 + 8; y++)
+            {
+                if (y < 0 || y >= H) continue;
+                int len = 40 + (line * 37) % 140; // 行ごとに長さを変える
+                for (int x = 4; x < 4 + len && x < W; x++)
+                {
+                    int p = (y * W + x) * 4;
+                    px[p] = px[p + 1] = px[p + 2] = 0;
+                }
+            }
+        }
+        return px;
+    }
+
+    private static FrameSignature Sig(byte[] px) => FrameSignature.Compute(px, W, H, W * 4);
+
+    [Fact]
+    public void Scroll_IsDetectedAsShift()
+    {
+        var shift = Sig(Text(20)).EstimateVerticalShift(Sig(Text(0)));
+        Assert.NotNull(shift);
+        Assert.InRange(shift!.Value, 16, 24);
+    }
+
+    [Fact]
+    public void SameContent_IsNotShift() => Assert.Null(Sig(Text(0)).EstimateVerticalShift(Sig(Text(0))));
+
+    [Fact]
+    public void InPlaceChange_IsNotShift()
+    {
+        // 動画のように、その場で明るさが変わる(ずれではない)
+        var a = Text(0);
+        var b = (byte[])a.Clone();
+        var rnd = new System.Random(1);
+        for (int i = 0; i < b.Length; i += 4)
+        {
+            byte v = (byte)rnd.Next(256);
+            b[i] = b[i + 1] = b[i + 2] = v;
+        }
+        Assert.Null(Sig(b).EstimateVerticalShift(Sig(a)));
+    }
+}

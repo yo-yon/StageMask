@@ -243,7 +243,7 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
-                                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
                                 </Grid.RowDefinitions>
                                 <CheckBox Grid.Row="0" Grid.ColumnSpan="2" IsChecked="{Binding MaskOnWheel}"
                                           Content="マウスホイールでスクロールしたら、カーソルの下のウィンドウ全体をすぐ隠す(推奨)" />
@@ -259,7 +259,9 @@
                                 <TextBox Grid.Row="5" Grid.Column="1" Width="100" HorizontalAlignment="Left" Margin="0,3" Text="{Binding LargeChangePercent}" />
                                 <CheckBox Grid.Row="6" Grid.ColumnSpan="2" IsChecked="{Binding IgnoreClockChanges}"
                                           Content="時計・会議の経過時間のように、数字だけが毎秒変わる小さな部分は先に隠さない(ちらつき防止)" />
-                                <TextBlock Grid.Row="7" Grid.ColumnSpan="2" Style="{StaticResource Hint}"
+                                <CheckBox Grid.Row="7" Grid.ColumnSpan="2" IsChecked="{Binding VideoTileMask}"
+                                          Content="会議の映像・動画のように動き続けるウィンドウは、全体ではなく変わった部分だけ隠す" />
+                                <TextBlock Grid.Row="8" Grid.ColumnSpan="2" Style="{StaticResource Hint}"
                                            Text="ホイールの検知には低レベルマウスフックを使います。見るのはホイールの回転とカーソル位置だけで、クリック・キー入力は見ず、記録もしません。タッチパッド・スクロールバー・キー操作によるスクロールは、変化の確認(0.1秒ごと)で検知して隠します。" />
                             </Grid>
                         </GroupBox>

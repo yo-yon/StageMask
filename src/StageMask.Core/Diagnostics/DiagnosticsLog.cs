@@ -25,6 +25,8 @@ public sealed record DiagnosticsSample
     public int DetectionMasks { get; init; }
     public int PendingMasks { get; init; }
     public int ScrollMasks { get; init; }
+    /// <summary>動き続けているため、変わった部分だけを隠しているウィンドウの数</summary>
+    public int VideoWindows { get; init; }
     public int FailClosed { get; init; }
     public int OcrCycleMs { get; init; }
     public int CheckRoundMs { get; init; }
@@ -66,7 +68,7 @@ public sealed class DiagnosticsLog
     public static readonly string[] Columns =
     {
         "time", "cpu_percent", "working_set_mb", "private_mb", "gc_heap_mb", "threads",
-        "overlays", "hidden_windows", "detect_targets", "detection_masks", "pending_masks", "scroll_masks", "fail_closed",
+        "overlays", "hidden_windows", "detect_targets", "detection_masks", "pending_masks", "scroll_masks", "video_windows", "fail_closed",
         "ocr_cycle_ms", "check_round_ms", "ocr_full", "ocr_bands", "ocr_skipped", "capture_failures", "wheel_events",
         "renders", "render_ms", "max_visuals", "check_capture_ms", "check_signature_ms", "max_capture_ms", "gc_committed_mb",
         "masks_enabled", "detection_enabled", "panic", "edit_mode", "events",
@@ -137,6 +139,7 @@ public sealed class DiagnosticsLog
             s.DetectionMasks.ToString(c),
             s.PendingMasks.ToString(c),
             s.ScrollMasks.ToString(c),
+            s.VideoWindows.ToString(c),
             s.FailClosed.ToString(c),
             s.OcrCycleMs.ToString(c),
             s.CheckRoundMs.ToString(c),

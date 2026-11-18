@@ -147,6 +147,13 @@ public sealed class DetectionSettings
     /// (OCR はこれまでどおり行い、数字以外の文字が出てきたら次からは通常どおり隠す)。
     /// </summary>
     public bool IgnoreClockChanges { get; set; } = true;
+
+    /// <summary>
+    /// 会議の映像・動画のように動き続けるウィンドウは、ウィンドウ全体ではなく「変わった部分」だけを隠す。
+    /// 3秒以上動き続け、その間スクロール(内容の上下のずれ)が見えないウィンドウが対象。
+    /// OFF にすると、動いている間はずっとウィンドウ全体を隠す(従来の動き)。
+    /// </summary>
+    public bool VideoTileMask { get; set; } = true;
     /// <summary>ウィンドウのこの割合(%)以上が変わったら「大きな変化」とする</summary>
     public int LargeChangePercent { get; set; } = 10;
 

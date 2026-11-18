@@ -49,12 +49,14 @@ internal sealed record WorkerConfig(
     bool ChangeMask,       // 確認前の変化を先に隠す
     int ChangeCheckMs,     // 変化を確認する間隔
     bool IgnoreClocks,     // 時計・タイマーのような数字だけの小さな変化は先に隠さない
+    bool VideoTileMask,    // 動き続けるウィンドウ(会議の映像など)は全体ではなく変わった部分だけ隠す
     double LargeChangeFraction); // この割合以上のタイルが変わったら「大きな変化」とする
 
 /// <summary>未確認(OCRでまだ検査していない)の範囲。座標はキャプチャ画像の座標。</summary>
 /// <param name="Fraction">未確認のタイルの割合(0〜1)。大きいときはウィンドウ全体を隠す</param>
 /// <param name="LastMotionUtc">前回の確認から大きく動いた(スクロールなど)最後の時刻</param>
-internal sealed record PendingSnapshot(IReadOnlyList<RectD> Rects, FrameGeometry Geometry, double Fraction, DateTime LastMotionUtc);
+/// <param name="VideoLike">動き続けている(会議の映像・動画など)。スクロールではない</param>
+internal sealed record PendingSnapshot(IReadOnlyList<RectD> Rects, FrameGeometry Geometry, double Fraction, DateTime LastMotionUtc, bool VideoLike);
 
 /// <summary>
 /// 自動検出の対象ウィンドウごとの状態。
@@ -71,6 +73,17 @@ internal sealed class WindowScanState
     public List<RectD> Pending = new();
     public double PendingFraction;
     public double LastMotionFraction;
+    /// <summary>動き続けている期間の始まり・最後に動いた時刻・最後にスクロール(上下のずれ)を見た時刻</summary>
+    public DateTime MotionStartUtc, LastMovingUtc, LastScrollUtc;
+
+    /// <summary>
+    /// 動画のように動き続けているか: 3秒以上動き続けていて、その間スクロール(上下のずれ)が見えないもの。
+    /// スクロールは短時間で止まるか、内容が上下にずれるので区別できる。
+    /// </summary>
+    public bool IsVideoLike(DateTime now) =>
+        (now - LastMovingUtc).TotalMilliseconds < 1000 &&
+        (now - MotionStartUtc).TotalMilliseconds >= 3000 &&
+        (now - LastScrollUtc).TotalMilliseconds >= 1500;
     public DateTime LastMotionUtc;
 
     /// <summary>Verified と比べた未確認の範囲を更新する(Gate をロックした状態で呼ぶ)。</summary>
@@ -166,7 +179,8 @@ internal sealed class DetectionWorker : IDisposable
         lock (st.Gate)
         {
             if (st.Geometry is null) return null;
-            return new PendingSnapshot(st.Pending.ToArray(), st.Geometry, st.PendingFraction, st.LastMotionUtc);
+            return new PendingSnapshot(st.Pending.ToArray(), st.Geometry, st.PendingFraction, st.LastMotionUtc,
+                                       _config.VideoTileMask && st.IsVideoLike(DateTime.UtcNow));
         }
     }
 
@@ -460,7 +474,15 @@ internal sealed class DetectionWorker : IDisposable
                     // 大きく変わった、または中くらいの変化が続いている(タッチパッドのゆっくりしたスクロールなど)
                     bool moving = motion >= cfg.LargeChangeFraction ||
                                   (motion >= ContinuousMotionFraction && state.LastMotionFraction >= ContinuousMotionFraction);
-                    if (moving) state.LastMotionUtc = now;
+                    if (moving)
+                    {
+                        state.LastMotionUtc = now;
+                        // 動き続けている時間を数える(1秒以上止まったら数え直す)
+                        if ((now - state.LastMovingUtc).TotalMilliseconds > 1000) state.MotionStartUtc = now;
+                        state.LastMovingUtc = now;
+                        // 内容が上下にずれていればスクロール(動画ではない)
+                        if (sig.EstimateVerticalShift(prev) is not null) state.LastScrollUtc = now;
+                    }
                     state.LastMotionFraction = motion;
                 }
                 state.LatestFrame = frame;

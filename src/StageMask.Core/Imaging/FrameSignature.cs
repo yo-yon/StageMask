@@ -162,6 +162,75 @@ public sealed class FrameSignature
         return result;
     }
 
+    /// <summary>
+    /// 横一列ごとの明るさの平均(上から順、サンプルの行単位 = Step ピクセルごと)。
+    /// スクロール(内容が上下にずれる)と動画(その場で変わる)を見分けるために使う。
+    /// </summary>
+    public double[] RowProfile()
+    {
+        int n = (Height + Step - 1) / Step;
+        var sum = new double[n];
+        var count = new int[n];
+        for (int r = 0; r < Rows; r++)
+        {
+            int baseRow = r * TileSize / Step;
+            for (int c = 0; c < Columns; c++)
+            {
+                var t = _tiles[r * Columns + c];
+                int perRow = SamplesPerRow(c);
+                if (perRow == 0) continue;
+                for (int i = 0; i < t.Length; i++)
+                {
+                    int row = baseRow + i / perRow;
+                    if (row >= n) continue;
+                    sum[row] += t[i];
+                    count[row]++;
+                }
+            }
+        }
+        for (int i = 0; i < n; i++) if (count[i] > 0) sum[i] /= count[i];
+        return sum;
+    }
+
+    /// <summary>
+    /// previous から this への上下のずれ(ピクセル)を推定する。スクロールらしいずれがなければ null。
+    /// 横一列ごとの明るさを上下にずらして比べ、ずらしたほうが「ずらさない場合」より明らかによく一致すればスクロールとみなす。
+    /// </summary>
+    public int? EstimateVerticalShift(FrameSignature? previous, double maxShiftFraction = 0.4)
+    {
+        if (!IsSameLayout(previous)) return null;
+        var a = previous!.RowProfile();
+        var b = RowProfile();
+        int n = a.Length;
+        if (n < 8) return null;
+        int maxShift = Math.Max(1, (int)(n * maxShiftFraction));
+
+        double Error(int d)
+        {
+            double e = 0; int cnt = 0;
+            for (int i = 0; i < n; i++)
+            {
+                int j = i + d;
+                if (j < 0 || j >= n) continue;
+                e += Math.Abs(b[i] - a[j]);
+                cnt++;
+            }
+            return cnt < n / 2 ? double.MaxValue : e / cnt;
+        }
+
+        double e0 = Error(0);
+        if (e0 < 1.0) return null; // ほとんど変わっていない
+        int best = 0; double bestErr = e0;
+        for (int d = -maxShift; d <= maxShift; d++)
+        {
+            if (d == 0) continue;
+            double e = Error(d);
+            if (e < bestErr) { bestErr = e; best = d; }
+        }
+        // ずらしたほうが半分以下の誤差になれば「ずれた(スクロール)」とみなす
+        return best != 0 && bestErr < e0 * 0.5 ? best * Step : null;
+    }
+
     /// <summary>タイルの数</summary>
     public int TileCount => Columns * Rows;
 

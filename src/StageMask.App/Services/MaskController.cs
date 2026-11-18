@@ -97,6 +97,8 @@ internal sealed class MaskController : IDisposable
     public int PendingMaskCount { get; private set; }
     /// <summary>スクロール中のため全体を隠しているウィンドウの数</summary>
     public int ScrollMaskCount { get; private set; }
+    /// <summary>動き続けているため、変わった部分だけを隠しているウィンドウの数</summary>
+    public int VideoWindowCount { get; private set; }
     /// <summary>変化の確認1回分の時間</summary>
     public TimeSpan CheckRound => _worker.LastCheckRound;
     /// <summary>ホイール検知が動いているか</summary>
@@ -296,7 +298,7 @@ internal sealed class MaskController : IDisposable
         var targets = new Dictionary<IntPtr, WorkTarget>();
         var detectIds = new List<long>();
         var manualTargets = new List<ManualMosaicTarget>();
-        int hiddenCount = 0, detectionMasks = 0, failClosed = 0, pendingMasks = 0, scrollMasks = 0;
+        int hiddenCount = 0, detectionMasks = 0, failClosed = 0, pendingMasks = 0, scrollMasks = 0, videoWindows = 0;
         string? failReason = null;
         // 最後の検査成功からこの時間を過ぎたら「検査できていない」とみなす(処理の停止・遅延への備え)
         var maxScanAge = Settings.Detection.MaskUnverifiedChanges
@@ -378,7 +380,9 @@ internal sealed class MaskController : IDisposable
                                     _wheelUntil.TryGetValue(w.Handle, out var wheelUntil) && wheelUntil > now;
                     // 大きな変化(スクロール・ページ切り替えなど): 動いている間と、未確認が広い間は全体を隠す
                     var pending = Settings.Detection.MaskUnverifiedChanges ? _worker.GetPending(w.Handle) : null;
-                    bool largeChange = Settings.Detection.MaskOnLargeChange && pending is not null &&
+                    // 会議の映像・動画のように動き続けるウィンドウは、全体ではなく変わった部分だけを隠す(下の pending の描画)
+                    if (pending is { VideoLike: true }) videoWindows++;
+                    bool largeChange = Settings.Detection.MaskOnLargeChange && pending is not null && !pending.VideoLike &&
                                        (pending.Fraction >= LargeChangeFraction ||
                                         (now - pending.LastMotionUtc).TotalMilliseconds < Math.Clamp(Settings.Detection.WheelMaskMs, 100, 5000));
                     if (hide is null && (wheeling || largeChange))
@@ -461,6 +465,7 @@ internal sealed class MaskController : IDisposable
         FailClosedReason = failReason;
         PendingMaskCount = pendingMasks;
         ScrollMaskCount = scrollMasks;
+        VideoWindowCount = videoWindows;
         foreach (var kv in _wheelUntil)
             if (kv.Value <= now) _wheelUntil.TryRemove(kv.Key, out _);
 
@@ -703,6 +708,7 @@ internal sealed class MaskController : IDisposable
             d.MaskUnverifiedChanges,
             Math.Clamp(d.ChangeCheckMs, 50, 2000),
             d.IgnoreClockChanges,
+            d.VideoTileMask,
             LargeChangeFraction);
     }
 
