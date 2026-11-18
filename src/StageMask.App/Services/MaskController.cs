@@ -70,6 +70,7 @@ internal sealed class MaskController : IDisposable
     public long CaptureFailureCount => _worker.CaptureFailureCount;
     public double CheckCaptureMsTotal => _worker.CaptureMsTotal;
     public double CheckSignatureMsTotal => _worker.SignatureMsTotal;
+    public double TakeMaxCaptureMs() => _worker.TakeMaxCaptureMs();
 
     /// <summary>診断ログに残す出来事を記録する(決まった文言だけを渡すこと。画面の内容は渡さない)。</summary>
     public void RecordEvent(string name)

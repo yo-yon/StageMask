@@ -144,6 +144,9 @@ internal sealed class DetectionWorker : IDisposable
     private long _captureTicks, _signatureTicks; // 変化の確認での取り込み・指紋計算にかかった時間(Stopwatch のティック)
     public double CaptureMsTotal => Interlocked.Read(ref _captureTicks) * 1000.0 / Stopwatch.Frequency;
     public double SignatureMsTotal => Interlocked.Read(ref _signatureTicks) * 1000.0 / Stopwatch.Frequency;
+    private long _maxCaptureTicks; // 1回の取り込みにかかった最長時間(読むとリセット)
+    /// <summary>前回呼んでからの、1回の取り込みの最長時間(ミリ秒)を返してリセットする。</summary>
+    public double TakeMaxCaptureMs() => Interlocked.Exchange(ref _maxCaptureTicks, 0) * 1000.0 / Stopwatch.Frequency;
     public long OcrFullCount => Interlocked.Read(ref _ocrFull);
     public long OcrBandCount => Interlocked.Read(ref _ocrBands);
     public long OcrSkippedCount => Interlocked.Read(ref _ocrSkipped);
@@ -392,7 +395,11 @@ internal sealed class DetectionWorker : IDisposable
             long c0 = Stopwatch.GetTimestamp();
             try { frame = await CaptureSerializedAsync(capturer, t.Hwnd, ct).ConfigureAwait(false); }
             catch (Exception ex) when (ex is not OperationCanceledException) { frame = null; Logger.Write("ChangeCheckCapture", ex); }
-            Interlocked.Add(ref _captureTicks, Stopwatch.GetTimestamp() - c0);
+            long took = Stopwatch.GetTimestamp() - c0;
+            Interlocked.Add(ref _captureTicks, took);
+            long cur;
+            while (took > (cur = Interlocked.Read(ref _maxCaptureTicks)) &&
+                   Interlocked.CompareExchange(ref _maxCaptureTicks, took, cur) != cur) { }
 
             var now = DateTime.UtcNow;
             if (frame is null)

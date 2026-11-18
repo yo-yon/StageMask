@@ -48,6 +48,10 @@ public sealed record DiagnosticsSample
     public double CheckCaptureMs { get; init; }
     /// <summary>この1行の間に、変化の確認で指紋の計算にかかった時間の合計(ミリ秒)</summary>
     public double CheckSignatureMs { get; init; }
+    /// <summary>この1行の間で、1回の取り込みにかかった最長時間(ミリ秒)。遅いウィンドウがあるかの目安</summary>
+    public double MaxCaptureMs { get; init; }
+    /// <summary>.NET のGCが確保しているメモリ(MB)。private_mb との差が大きければ、.NET 以外(OCR・描画など)が使っている</summary>
+    public double GcCommittedMb { get; init; }
     public bool MasksEnabled { get; init; }
     public bool DetectionEnabled { get; init; }
     public bool Panic { get; init; }
@@ -64,7 +68,7 @@ public sealed class DiagnosticsLog
         "time", "cpu_percent", "working_set_mb", "private_mb", "gc_heap_mb", "threads",
         "overlays", "hidden_windows", "detect_targets", "detection_masks", "pending_masks", "scroll_masks", "fail_closed",
         "ocr_cycle_ms", "check_round_ms", "ocr_full", "ocr_bands", "ocr_skipped", "capture_failures", "wheel_events",
-        "renders", "render_ms", "max_visuals", "check_capture_ms", "check_signature_ms",
+        "renders", "render_ms", "max_visuals", "check_capture_ms", "check_signature_ms", "max_capture_ms", "gc_committed_mb",
         "masks_enabled", "detection_enabled", "panic", "edit_mode", "events",
     };
 
@@ -146,6 +150,8 @@ public sealed class DiagnosticsLog
             s.MaxVisuals.ToString(c),
             s.CheckCaptureMs.ToString("0.0", c),
             s.CheckSignatureMs.ToString("0.0", c),
+            s.MaxCaptureMs.ToString("0.0", c),
+            s.GcCommittedMb.ToString("0.0", c),
             Bool(s.MasksEnabled),
             Bool(s.DetectionEnabled),
             Bool(s.Panic),

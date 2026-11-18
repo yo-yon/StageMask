@@ -89,6 +89,8 @@ internal sealed class DiagnosticsRecorder
             MaxVisuals = render.MaxVisuals,
             CheckCaptureMs = DeltaMs(c.CheckCaptureMsTotal, ref _lastCaptureMs),
             CheckSignatureMs = DeltaMs(c.CheckSignatureMsTotal, ref _lastSignatureMs),
+            MaxCaptureMs = c.TakeMaxCaptureMs(),
+            GcCommittedMb = GC.GetGCMemoryInfo().TotalCommittedBytes / 1024.0 / 1024.0,
             MasksEnabled = c.MasksEnabled,
             DetectionEnabled = c.Settings.Detection.Enabled,
             Panic = c.Panic,
@@ -116,6 +118,7 @@ internal sealed class DiagnosticsRecorder
         _lastWheel = _controller.WheelEventCount;
         _lastCaptureMs = _controller.CheckCaptureMsTotal;
         _lastSignatureMs = _controller.CheckSignatureMsTotal;
+        _controller.TakeMaxCaptureMs();
     }
 
     private static double DeltaMs(double current, ref double last)
