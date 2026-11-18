@@ -198,3 +198,15 @@ GitHub に push すると、`.github/workflows/build.yml` が Windows 上でテ�
 ## ライセンス
 
 MIT License
+
+## リリースの作り方(開発者向け)
+
+1. `src/StageMask.App/StageMask.App.csproj` の `<Version>` を新しい番号にしてコミット・push する
+2. 同じ番号のタグを付けて push する
+
+   ```powershell
+   git tag v0.5.9
+   git push origin v0.5.9
+   ```
+
+3. GitHub Actions がテスト → exe の作成 → [リリースページ](../../releases) の作成までを自動で行う(数分)。タグと `<Version>` が違うと途中で止まる

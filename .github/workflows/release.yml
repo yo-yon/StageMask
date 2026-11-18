@@ -1,0 +1,87 @@
+name: release
+
+# v0.5.8 のようなタグを push すると、テスト → exe の作成 → リリースページの作成までを自動で行う。
+# 使い方:  git tag v0.5.9  →  git push origin v0.5.9
+# (タグの番号は src/StageMask.App/StageMask.App.csproj の <Version> と同じにすること。違うと止まる)
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write   # リリースの作成に必要
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: タグとアプリのバージョンが一致するか確認
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          [xml]$proj = Get-Content src/StageMask.App/StageMask.App.csproj
+          $version = ($proj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if ("v$version" -ne $tag) {
+            Write-Error "タグ($tag)と csproj の Version(v$version)が一致しません。どちらかを直してください。"
+            exit 1
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Restore
+        run: dotnet restore StageMask.sln
+
+      - name: Test (Core)
+        run: dotnet test tests/StageMask.Core.Tests --no-restore --configuration Release
+
+      - name: Publish (App, 自己完結型 x64)
+        run: >
+          dotnet publish src/StageMask.App/StageMask.App.csproj
+          --configuration Release --runtime win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=embedded
+          --output publish
+
+      - name: 配布用 zip を作成
+        shell: pwsh
+        run: |
+          $name = "StageMask-v$env:VERSION-win-x64"
+          New-Item -ItemType Directory -Path dist/$name | Out-Null
+          Copy-Item publish/StageMask.exe, README.md, LICENSE -Destination dist/$name
+          Compress-Archive -Path dist/$name -DestinationPath dist/$name.zip
+          $hash = (Get-FileHash dist/$name.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File -FilePath dist/$name.zip.sha256 -Encoding ascii
+          "ASSET=dist/$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: リリースを作成
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $notes = @"
+          ## StageMask $tag (試作版)
+
+          ### 使い方
+          1. ``StageMask-$tag-win-x64.zip`` をダウンロードして展開します。
+          2. ``StageMask.exe`` をダブルクリックで起動します(.NET のインストールは不要です)。
+          3. 初回は Windows SmartScreen の警告が出ることがあります(署名なしの試作版のため)。「詳細情報」→「実行」で起動できます。
+
+          ### 確認用
+          ``.sha256`` ファイルに zip の SHA-256 ハッシュ値を載せています。
+          PowerShell で ``Get-FileHash .\StageMask-$tag-win-x64.zip`` を実行し、値が一致することを確認できます。
+
+          ### 変更内容
+          前の版からのコミット一覧は、このページ下部の自動生成部分を参照してください。
+          "@
+          # 0.x の間は「プレリリース」として公開する
+          gh release create $tag "$env:ASSET" "$env:ASSET.sha256" `
+            --title "StageMask $tag" `
+            --notes $notes `
+            --generate-notes `
+            --prerelease
