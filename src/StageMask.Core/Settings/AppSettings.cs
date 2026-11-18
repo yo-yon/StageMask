@@ -141,6 +141,12 @@ public sealed class DetectionSettings
     /// 「機密情報を隠す」なら検査し、「常に隠す」なら隠す。メールアドレスの入力候補などの見落としを防ぐ。
     /// </summary>
     public bool IncludePopups { get; set; } = true;
+
+    /// <summary>
+    /// 時計・会議の経過時間のように「数字だけが毎秒変わる小さな部分」は、変化しても先に隠さない
+    /// (OCR はこれまでどおり行い、数字以外の文字が出てきたら次からは通常どおり隠す)。
+    /// </summary>
+    public bool IgnoreClockChanges { get; set; } = true;
     /// <summary>ウィンドウのこの割合(%)以上が変わったら「大きな変化」とする</summary>
     public int LargeChangePercent { get; set; } = 10;
 

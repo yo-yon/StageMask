@@ -48,6 +48,7 @@ internal sealed record WorkerConfig(
     int MosaicRefreshMs,
     bool ChangeMask,       // 確認前の変化を先に隠す
     int ChangeCheckMs,     // 変化を確認する間隔
+    bool IgnoreClocks,     // 時計・タイマーのような数字だけの小さな変化は先に隠さない
     double LargeChangeFraction); // この割合以上のタイルが変わったら「大きな変化」とする
 
 /// <summary>未確認(OCRでまだ検査していない)の範囲。座標はキャプチャ画像の座標。</summary>
@@ -73,7 +74,10 @@ internal sealed class WindowScanState
     public DateTime LastMotionUtc;
 
     /// <summary>Verified と比べた未確認の範囲を更新する(Gate をロックした状態で呼ぶ)。</summary>
-    public void UpdatePending(FrameSignature sig, bool changeMask)
+    /// <summary>時計・タイマーのような数字だけのマス(毎秒変わっても先に隠さない)</summary>
+    public ClockTileMap? Clocks;
+
+    public void UpdatePending(FrameSignature sig, bool changeMask, bool ignoreClocks)
     {
         if (!changeMask)
         {
@@ -82,6 +86,9 @@ internal sealed class WindowScanState
             return;
         }
         var changed = sig.ChangedTiles(Verified);
+        // 時計・会議タイマーのように数字だけが変わる小さな変化は、先に隠さない(OCR は行う)
+        if (ignoreClocks && Clocks is not null && Clocks.IsSameLayout(sig))
+            changed = Clocks.ExcludeClockTiles(changed);
         PendingFraction = sig.TileCount == 0 ? 0 : (double)changed.Count / sig.TileCount;
         // 隣のタイルまで広げて隠す(行の境目にまたがった文字・確認の合間に変わった部分の取りこぼしを防ぐ)
         Pending = DetectionWorker.TilesToRects(sig, sig.Dilate(changed, 1));
@@ -460,7 +467,7 @@ internal sealed class DetectionWorker : IDisposable
                 state.LatestSig = sig;
                 state.LatestUtc = now;
                 state.Geometry = new FrameGeometry(frame.Origin, frame.Width, frame.Height);
-                state.UpdatePending(sig, cfg.ChangeMask);
+                state.UpdatePending(sig, cfg.ChangeMask, cfg.IgnoreClocks);
                 // 内容が変わっていない場所の検出結果は、まだ有効なので期限を延ばす
                 // (延ばさないと、OCRの順番待ちの間に期限切れになり、変わっていない機密情報が見えてしまう)
                 if (cfg.ChangeMask) _hold.ExtendOutside(id, state.Pending, now, holdUnchanged);
@@ -618,6 +625,7 @@ internal sealed class DetectionWorker : IDisposable
 
                 var bounds = new RectD(0, 0, frame.Width, frame.Height);
                 var items = new List<(RectD, DetectionCategory, DetectionPayload?)>();
+                var words = new List<OcrWordBox>(); // 時計のマスの判定用(画像全体の座標)
                 foreach (var band in bandRects)
                 {
                     int by = (int)band.Y, bh = (int)band.Height;
@@ -626,6 +634,9 @@ internal sealed class DetectionWorker : IDisposable
                     var perEngine = await ocr.RecognizeAsync(bandFrame, ct).ConfigureAwait(false);
                     foreach (var lines in perEngine)
                     {
+                        foreach (var line in lines)
+                            foreach (var w in line.Words)
+                                words.Add(w with { Box = w.Box.Offset(0, by) });
                         foreach (var d in detector.Detect(lines))
                         {
                             var r = d.Box.Offset(0, by).Inflate(cfg.PaddingPx).Intersect(bounds);
@@ -648,7 +659,12 @@ internal sealed class DetectionWorker : IDisposable
                 {
                     state.Verified = FrameSignature.WithRowsFrom(verified, sig, bands);
                     state.Geometry ??= geometry;
-                    if (state.LatestSig is not null) state.UpdatePending(state.LatestSig, cfg.ChangeMask);
+                    if (cfg.IgnoreClocks)
+                    {
+                        if (state.Clocks is null || !state.Clocks.IsSameLayout(sig)) state.Clocks = new ClockTileMap(sig);
+                        state.Clocks.Update(dirty, words);
+                    }
+                    if (state.LatestSig is not null) state.UpdatePending(state.LatestSig, cfg.ChangeMask, cfg.IgnoreClocks);
                 }
                 _scanStatus.RecordSuccess(id, now);
             }

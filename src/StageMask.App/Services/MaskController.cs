@@ -702,6 +702,7 @@ internal sealed class MaskController : IDisposable
             Math.Clamp(Settings.Appearance.MosaicRefreshMs, 100, 5000),
             d.MaskUnverifiedChanges,
             Math.Clamp(d.ChangeCheckMs, 50, 2000),
+            d.IgnoreClockChanges,
             LargeChangeFraction);
     }
 
