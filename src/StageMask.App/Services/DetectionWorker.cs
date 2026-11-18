@@ -197,6 +197,8 @@ internal sealed class DetectionWorker : IDisposable
 
     private async Task<CapturedFrame?> CaptureSerializedAsync(IWindowCapturer capturer, IntPtr hwnd, CancellationToken ct)
     {
+        // 同時に取り込める方式(PrintWindow)なら順番待ちしない
+        if (capturer.SupportsConcurrentCapture) return await capturer.CaptureAsync(hwnd, ct).ConfigureAwait(false);
         await _captureGate.WaitAsync(ct).ConfigureAwait(false);
         try { return await capturer.CaptureAsync(hwnd, ct).ConfigureAwait(false); }
         finally { _captureGate.Release(); }
@@ -387,15 +389,34 @@ internal sealed class DetectionWorker : IDisposable
         // 確認済みの内容から変わっていない場所の検出結果は、次に確認するまで保持し続ける
         var holdUnchanged = TimeSpan.FromMilliseconds(Math.Max(cfg.HoldMs, 3 * CheckRotationPeriod.TotalMilliseconds + 1000));
 
-        foreach (var t in round)
+        // 取り込み: 同時に取り込める方式なら全ウィンドウを同時に取り込む(1回の時間が「一番遅い1つ分」になる)
+        async Task<(CapturedFrame? Frame, long Took)> CaptureTimedAsync(IntPtr hwnd)
         {
+            long c0 = Stopwatch.GetTimestamp();
+            CapturedFrame? f;
+            try { f = await CaptureSerializedAsync(capturer, hwnd, ct).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { f = null; Logger.Write("ChangeCheckCapture", ex); }
+            return (f, Stopwatch.GetTimestamp() - c0);
+        }
+
+        (CapturedFrame? Frame, long Took)[] captures;
+        if (capturer.SupportsConcurrentCapture)
+        {
+            captures = await Task.WhenAll(round.Select(t => CaptureTimedAsync(t.Hwnd))).ConfigureAwait(false);
+        }
+        else
+        {
+            captures = new (CapturedFrame?, long)[round.Count];
+            for (int i = 0; i < round.Count; i++) captures[i] = await CaptureTimedAsync(round[i].Hwnd).ConfigureAwait(false);
+        }
+
+        for (int ri = 0; ri < round.Count; ri++)
+        {
+            var t = round[ri];
             ct.ThrowIfCancellationRequested();
             long id = t.Hwnd.ToInt64();
-            CapturedFrame? frame;
-            long c0 = Stopwatch.GetTimestamp();
-            try { frame = await CaptureSerializedAsync(capturer, t.Hwnd, ct).ConfigureAwait(false); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { frame = null; Logger.Write("ChangeCheckCapture", ex); }
-            long took = Stopwatch.GetTimestamp() - c0;
+            var (frame, took) = captures[ri];
+            // check_capture_ms は「取り込みにかかった時間の合計」(同時に取り込んだ分も足す)
             Interlocked.Add(ref _captureTicks, took);
             long cur;
             while (took > (cur = Interlocked.Read(ref _maxCaptureTicks)) &&

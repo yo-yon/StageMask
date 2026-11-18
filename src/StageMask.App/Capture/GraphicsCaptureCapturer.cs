@@ -21,6 +21,9 @@ namespace StageMask.App.Capture;
 /// </summary>
 internal sealed class GraphicsCaptureCapturer : IWindowCapturer
 {
+    // フレームプールを2つの処理で取り合わないよう、1つずつ順番に取り込む
+    public bool SupportsConcurrentCapture => false;
+
     private sealed class SessionState : IDisposable
     {
         public required GraphicsCaptureItem Item;

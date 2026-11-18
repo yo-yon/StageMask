@@ -28,6 +28,12 @@ internal sealed record CapturedFrame(byte[] Pixels, int Width, int Height, int S
 
 internal interface IWindowCapturer : IDisposable
 {
+    /// <summary>
+    /// 複数のウィンドウを同時に取り込んでよいか。
+    /// PrintWindow は対象アプリごとに独立しているので同時に呼べる(時間が「一番遅い1つ分」で済む)。
+    /// </summary>
+    bool SupportsConcurrentCapture { get; }
+
     /// <summary>ウィンドウの現在の画像を取得する。取得できなければ null。</summary>
     Task<CapturedFrame?> CaptureAsync(IntPtr hwnd, CancellationToken ct);
 

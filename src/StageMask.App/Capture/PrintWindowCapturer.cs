@@ -15,6 +15,8 @@ namespace StageMask.App.Capture;
 /// </summary>
 internal sealed class PrintWindowCapturer : IWindowCapturer
 {
+    public bool SupportsConcurrentCapture => true;
+
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(2);
 
     // 応答しないアプリへの PrintWindow は、タイムアウト後もスレッドを占有したまま残る。
@@ -24,7 +26,13 @@ internal sealed class PrintWindowCapturer : IWindowCapturer
     public async Task<CapturedFrame?> CaptureAsync(IntPtr hwnd, CancellationToken ct)
     {
         if (_inFlight.TryGetValue(hwnd, out var running) && !running.IsCompleted)
-            return null; // 前回の取り込みがまだ終わっていない = 応答していない → 取り込み失敗として扱う(全体を隠す)
+        {
+            // 同じウィンドウの取り込みが進行中なら、新しく呼ばずにその結果を待って使う
+            // (変化の確認とOCRが同時に同じウィンドウを取り込もうとした場合など)。
+            // 相手が応答しない場合は時間切れで null(取り込み失敗 → 全体を隠す)
+            try { return await running.WaitAsync(Timeout, ct); }
+            catch (TimeoutException) { return null; }
+        }
 
         // PrintWindow は対象アプリが応答しないとブロックするため、別スレッド+タイムアウトで呼ぶ
         var task = Task.Run(() => Capture(hwnd), CancellationToken.None);
