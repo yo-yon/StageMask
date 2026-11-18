@@ -1,12 +1,15 @@
 name: release
 
-# v0.5.8 のようなタグを push すると、テスト → exe の作成 → リリースページの作成までを自動で行う。
-# 使い方:  git tag v0.5.9  →  git push origin v0.5.9
-# (タグの番号は src/StageMask.App/StageMask.App.csproj の <Version> と同じにすること。違うと止まる)
+# テスト → exe の作成 → リリースページの作成までを自動で行う。始め方は2通り:
+#  (A) GitHub の Actions タブ → release → Run workflow(ブラウザーやスマホから実行できる)
+#      csproj の <Version> から v0.5.9 のようなタグを自動で作る
+#  (B) タグを push する:  git tag v0.5.9  →  git push origin v0.5.9
+#      タグの番号は src/StageMask.App/StageMask.App.csproj の <Version> と同じにすること(違うと止まる)
 
 on:
   push:
     tags: [ 'v*' ]
+  workflow_dispatch:
 
 permissions:
   contents: write   # リリースの作成に必要
@@ -21,17 +24,31 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: タグとアプリのバージョンが一致するか確認
+      - name: バージョンとタグを決める
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "${{ github.ref_name }}"
           [xml]$proj = Get-Content src/StageMask.App/StageMask.App.csproj
           $version = ($proj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
-          if ("v$version" -ne $tag) {
-            Write-Error "タグ($tag)と csproj の Version(v$version)が一致しません。どちらかを直してください。"
-            exit 1
+          if ("${{ github.event_name }}" -eq "push") {
+            $tag = "${{ github.ref_name }}"
+            if ("v$version" -ne $tag) {
+              Write-Error "タグ($tag)と csproj の Version(v$version)が一致しません。どちらかを直してください。"
+              exit 1
+            }
+          } else {
+            $tag = "v$version"
+            # 同じ番号のリリースが既にあれば止める(上書きしない)
+            gh release view $tag 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+              Write-Error "$tag のリリースは既にあります。csproj の Version を上げてから実行してください。"
+              exit 1
+            }
+            $global:LASTEXITCODE = 0
           }
           "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Restore
         run: dotnet restore StageMask.sln
@@ -63,7 +80,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:TAG
           $notes = @"
           ## StageMask $tag (試作版)
 
@@ -80,7 +97,9 @@ jobs:
           前の版からのコミット一覧は、このページ下部の自動生成部分を参照してください。
           "@
           # 0.x の間は「プレリリース」として公開する
+          # (A) の場合はタグがまだないので、このコミットにタグを作る
           gh release create $tag "$env:ASSET" "$env:ASSET.sha256" `
+            --target "${{ github.sha }}" `
             --title "StageMask $tag" `
             --notes $notes `
             --generate-notes `
