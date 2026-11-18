@@ -1,0 +1,354 @@
+<Window x:Class="StageMask.App.MainWindow"
+        x:ClassModifier="internal"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:StageMask.App.Views"
+        Title="StageMask — 登壇用マスク"
+        Width="900" Height="720" MinWidth="720" MinHeight="520"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource ApplicationBackgroundBrush}"
+        Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+    <DockPanel>
+        <!-- 上部: 本番中に使う操作(ONのボタンはアクセントカラーで表示される) -->
+        <Border DockPanel.Dock="Top" Margin="12,12,12,0" Padding="16,14,8,8" CornerRadius="8" BorderThickness="1"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+            <StackPanel>
+                <WrapPanel>
+                    <ToggleButton x:Name="MasksToggle" Style="{StaticResource TopToggle}" Click="MasksToggle_Click" />
+                    <ToggleButton x:Name="DetectToggle" Style="{StaticResource TopToggle}" Click="DetectToggle_Click" />
+                    <ToggleButton x:Name="EditToggle" Style="{StaticResource TopToggle}" Click="EditToggle_Click" />
+                    <ToggleButton x:Name="PanicToggle" Style="{StaticResource TopToggle}" Click="PanicToggle_Click" />
+                </WrapPanel>
+                <TextBlock x:Name="HotkeyText" Style="{StaticResource Hint}" Margin="0,0,0,6" />
+            </StackPanel>
+        </Border>
+
+        <!-- 下部: 状態表示 -->
+        <Border DockPanel.Dock="Bottom" Margin="12,0,12,12" Padding="12,8" CornerRadius="8"
+                Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}">
+            <StackPanel>
+                <TextBlock x:Name="ResourceText" FontWeight="SemiBold" Margin="0,0,0,4"
+                           ToolTip="StageMask 自身の使用量です。CPU は全コアを使い切った状態を 100% とした値(直近数秒をならした値)。メモリの「物理」は作業セット(共有分を含む)、「専用」は他のアプリと共有しない確保量です。タスクマネージャーの表示とは数え方が異なるため、値が一致しないことがあります。" />
+                <TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </Border>
+
+        <TabControl Margin="12">
+            <!-- ================= ウィンドウ ================= -->
+            <TabItem Header="ウィンドウ">
+                <Grid Margin="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <GroupBox Header="実行中のウィンドウ(タイトルに機密情報が含まれることがあるため、「一覧を更新」を押したときだけ表示し、パネルから離れると消します)" Grid.Row="0">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0">
+                                <Button Content="一覧を更新" Click="RefreshWindows_Click" />
+                                <Button Content="このアプリを常に隠す" Click="AddHideRule_Click" />
+                                <Button Content="このアプリの機密情報を隠す(OCR)" Click="AddDetectRule_Click" />
+                                <CheckBox x:Name="UseTitleFilter" Content="タイトルでも絞り込む" Margin="6,0,0,0" />
+                            </StackPanel>
+                            <ListView x:Name="WindowList" SelectionMode="Single">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="プロセス" Width="140" DisplayMemberBinding="{Binding ProcessName}" />
+                                        <GridViewColumn Header="タイトル" Width="560" DisplayMemberBinding="{Binding Title}" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </DockPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="ルール(上から順に評価。変更は即時反映)" Grid.Row="1">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource Hint}"
+                                       Text="プロセス名は拡張子なし(例: OUTLOOK, msedge, ms-teams)。タイトル条件は部分一致で、空欄なら条件なし。ストアアプリはプロセス名が ApplicationFrameHost になるため、タイトルで指定してください。" />
+                            <ListBox x:Name="RuleList" HorizontalContentAlignment="Stretch">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="130" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="180" />
+                                                <ColumnDefinition Width="100" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding Enabled, Mode=TwoWay}" Click="RuleChanged" ToolTip="有効/無効" />
+                                            <TextBox Grid.Column="1" Margin="4,0" ToolTip="プロセス名"
+                                                     Text="{Binding ProcessName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" LostFocus="RuleChanged" />
+                                            <TextBox Grid.Column="2" Margin="4,0" ToolTip="タイトルに含む文字(空欄なら条件なし)"
+                                                     Text="{Binding TitleContains, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" LostFocus="RuleChanged" />
+                                            <ComboBox Grid.Column="3" Margin="4,0"
+                                                      ItemsSource="{x:Static views:EnumChoices.RuleActions}"
+                                                      DisplayMemberPath="Label" SelectedValuePath="Value"
+                                                      SelectedValue="{Binding Action, Mode=TwoWay}" SelectionChanged="RuleChanged" />
+                                            <ComboBox Grid.Column="4" Margin="4,0"
+                                                      ItemsSource="{x:Static views:EnumChoices.MaskStyles}"
+                                                      DisplayMemberPath="Label" SelectedValuePath="Value"
+                                                      SelectedValue="{Binding Style, Mode=TwoWay}" SelectionChanged="RuleChanged" />
+                                            <Button Grid.Column="5" Content="表示…" Tag="{Binding}" Click="RuleContent_Click" ToolTip="このルールのマスクに表示する文字・画像" />
+                                            <Button Grid.Column="6" Content="削除" Tag="{Binding}" Click="DeleteRule_Click" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+
+            <!-- ================= 手動マスク ================= -->
+            <TabItem Header="手動マスク">
+                <DockPanel Margin="6">
+                    <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}"
+                               Text="画面上の固定位置を隠します(通知領域、ブックマークバー、デスクトップのアイコンなど)。上部の「マスク編集」をONにすると、画面上をドラッグして追加・移動・サイズ変更、右クリックで削除できます。見た目をモザイク/ぼかしにすると、マスクの下の画面を一定間隔(自動検出の実行間隔)で取り込んで加工します。" />
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Content="選択したマスクを削除" Click="DeleteManual_Click" />
+                        <Button Content="すべて削除" Click="ClearManual_Click" />
+                    </StackPanel>
+                    <ListView x:Name="ManualList" SelectionMode="Single" HorizontalContentAlignment="Stretch">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="有効" Width="50">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" Click="ManualChanged" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="名前" Width="220">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Width="200" Text="{Binding Label, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" LostFocus="ManualChanged" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="位置・サイズ(物理ピクセル)" Width="260">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock>
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}({0}, {1})  {2} × {3}">
+                                                        <Binding Path="X" />
+                                                        <Binding Path="Y" />
+                                                        <Binding Path="Width" />
+                                                        <Binding Path="Height" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="見た目" Width="120">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox Width="100"
+                                                      ItemsSource="{x:Static views:EnumChoices.MaskStyles}"
+                                                      DisplayMemberPath="Label" SelectedValuePath="Value"
+                                                      SelectedValue="{Binding Style, Mode=TwoWay}" SelectionChanged="ManualChanged" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="表示" Width="80">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Content="表示…" Tag="{Binding}" Click="ManualContent_Click" ToolTip="このマスクに表示する文字・画像" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </DockPanel>
+            </TabItem>
+
+            <!-- ================= 自動検出 ================= -->
+            <TabItem Header="自動検出">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="6" DataContext="{Binding Detection}">
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="「機密情報だけ隠す(OCR)」ルールの対象ウィンドウを定期的に読み取り、該当する文字を隠します。OCRには数百ミリ秒かかるため、新しく表示された文字が一瞬見えることがあります。確実に隠したい画面は「ウィンドウ全体を隠す」か手動マスクを併用してください。" />
+
+                        <GroupBox Header="検出する情報">
+                            <StackPanel>
+                                <CheckBox Content="メールアドレス・UPN" IsChecked="{Binding DetectEmail}" />
+                                <CheckBox Content="GUID・テナント固有のホスト名(*.onmicrosoft.com, *.sharepoint.com, *.crm.dynamics.com など)" IsChecked="{Binding DetectIdentifier}" />
+                                <CheckBox Content="APIキー・トークン・接続文字列・パスワード" IsChecked="{Binding DetectSecret}" />
+                                <CheckBox Content="└ 形式不明の長いランダム文字列も含める(過剰検出が増えることがあります)" Margin="20,3,0,3" IsChecked="{Binding DetectGenericSecret}" />
+                                <CheckBox Content="NGワード(下の一覧)" IsChecked="{Binding DetectNgWords}" />
+                                <CheckBox Content="└ あいまい一致(4文字以上のNGワードで1文字までの誤読を許容)" Margin="20,3,0,3" IsChecked="{Binding FuzzyNgWords}" />
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="NGワード(1行に1つ。顧客名・氏名・社内プロジェクト名など)">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="NgWordsSummary" VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <Button x:Name="NgWordsToggle" Content="表示して編集" Click="NgWordsToggle_Click" />
+                                </StackPanel>
+                                <!-- 普段は非表示。編集中だけ表示し、パネルからフォーカスが外れたら自動で隠す -->
+                                <TextBox x:Name="NgWordsBox" AcceptsReturn="True" Height="130" Margin="0,6,0,0"
+                                         VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" FontSize="13"
+                                         Visibility="Collapsed" />
+                                <TextBlock Style="{StaticResource Hint}"
+                                           Text="NGワードは画面に出さないよう普段は伏せています。設定ファイルには暗号化(DPAPI)して保存し、同じPC・同じWindowsユーザーでのみ読み取れます。全角/半角・大文字/小文字・空白の違いは無視して照合します。1〜2文字の短い語は誤検出が増えるため避けてください。" />
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="動作">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="240" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="OCRの実行間隔(ミリ秒)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="0" Grid.Column="1" Width="100" HorizontalAlignment="Left" Margin="0,3" Text="{Binding IntervalMs}" />
+                                <TextBlock Grid.Row="1" Text="検出後にマスクを保持する時間(ミリ秒)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="1" Grid.Column="1" Width="100" HorizontalAlignment="Left" Margin="0,3" Text="{Binding HoldMs}" />
+                                <TextBlock Grid.Row="2" Text="検出領域の余白(ピクセル)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="2" Grid.Column="1" Width="100" HorizontalAlignment="Left" Margin="0,3" Text="{Binding PaddingPx}" />
+                                <TextBlock Grid.Row="3" Text="検出領域のマスクの見た目" VerticalAlignment="Center" />
+                                <ComboBox Grid.Row="3" Grid.Column="1" Width="200" HorizontalAlignment="Left" Margin="0,3"
+                                          ItemsSource="{x:Static views:EnumChoices.MaskStyles}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          SelectedValue="{Binding Style, Mode=TwoWay}"
+                                          ToolTip="ルールごとの見た目が優先されます。ここは新しいルールの既定値です。" />
+                                <TextBlock Grid.Row="4" Text="キャプチャ方式" VerticalAlignment="Center" />
+                                <ComboBox Grid.Row="4" Grid.Column="1" Width="360" HorizontalAlignment="Left" Margin="0,3"
+                                          ItemsSource="{x:Static views:EnumChoices.CaptureMethods}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          SelectedValue="{Binding Capture, Mode=TwoWay}" />
+                                <CheckBox Grid.Row="5" Grid.ColumnSpan="2" Content="英語OCRエンジンも併用する(英数字の精度向上・CPU負荷は約2倍)" IsChecked="{Binding UseEnglishEngine}" />
+                                <CheckBox Grid.Row="6" Grid.ColumnSpan="2" Content="検出枠を赤線で表示する(位置合わせの確認用。本番ではOFF)" IsChecked="{Binding ShowDebugBoxes}" />
+                                <CheckBox Grid.Row="7" Grid.ColumnSpan="2" IsChecked="{Binding FailClosed}"
+                                          Content="検査できていない間(起動直後・取り込み失敗・OCRエラー)は、ウィンドウ全体を隠す(推奨)" />
+                                <CheckBox Grid.Row="8" Grid.ColumnSpan="2" IsChecked="{Binding ScanAllWindows}"
+                                          Content="画面全体を検査する(ルールがなくても、表示中のすべてのウィンドウを検査。CPU負荷と検出の遅れが大きくなります)" />
+                                <CheckBox Grid.Row="9" Grid.ColumnSpan="2" IsChecked="{Binding IncludePopups}"
+                                          Content="対象アプリのメニュー・入力候補・ツールチップも本体と同じルールで扱う(推奨。メールアドレスの入力候補などを隠すため)" />
+                            </Grid>
+                        </GroupBox>
+
+                        <GroupBox Header="スクロール・表示の変化への対策">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="240" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                                </Grid.RowDefinitions>
+                                <CheckBox Grid.Row="0" Grid.ColumnSpan="2" IsChecked="{Binding MaskOnWheel}"
+                                          Content="マウスホイールでスクロールしたら、カーソルの下のウィンドウ全体をすぐ隠す(推奨)" />
+                                <TextBlock Grid.Row="1" Text="スクロール後に隠し続ける時間(ミリ秒)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="1" Grid.Column="1" Width="100" HorizontalAlignment="Left" Margin="0,3" Text="{Binding WheelMaskMs}" />
+                                <CheckBox Grid.Row="2" Grid.ColumnSpan="2" IsChecked="{Binding MaskUnverifiedChanges}"
+                                          Content="表示が変わった部分は、OCRで検査し終わるまで塗りつぶしで隠す(推奨)" />
+                                <TextBlock Grid.Row="3" Text="変化を確認する間隔(ミリ秒)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="3" Grid.Column="1" Width="100" HorizontalAlignment="Left" Margin="0,3" Text="{Binding ChangeCheckMs}" />
+                                <CheckBox Grid.Row="4" Grid.ColumnSpan="2" IsChecked="{Binding MaskOnLargeChange}"
+                                          Content="ウィンドウの大部分が変わったら(スクロール・ページ切り替えなど)、落ち着いて検査が終わるまで全体を隠す(推奨)" />
+                                <TextBlock Grid.Row="5" Text="大部分とみなす割合(%)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="5" Grid.Column="1" Width="100" HorizontalAlignment="Left" Margin="0,3" Text="{Binding LargeChangePercent}" />
+                                <TextBlock Grid.Row="6" Grid.ColumnSpan="2" Style="{StaticResource Hint}"
+                                           Text="ホイールの検知には低レベルマウスフックを使います。見るのはホイールの回転とカーソル位置だけで、クリック・キー入力は見ず、記録もしません。タッチパッド・スクロールバー・キー操作によるスクロールは、変化の確認(0.1秒ごと)で検知して隠します。" />
+                            </Grid>
+                        </GroupBox>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <Button Content="自動検出の設定を適用・保存" Style="{StaticResource PrimaryButton}" Click="ApplyDetection_Click" />
+                            <TextBlock x:Name="DetectionSavedText" Style="{StaticResource SavedText}" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ================= 表示・ホットキー ================= -->
+            <TabItem Header="表示・ホットキー">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="6">
+                        <GroupBox Header="マスクの見た目" DataContext="{Binding Appearance}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="240" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="塗りつぶし色(#RRGGBB / #AARRGGBB)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="0" Grid.Column="1" Width="120" HorizontalAlignment="Left" Margin="0,3" Text="{Binding SolidColor}" />
+                                <CheckBox Grid.Row="1" Grid.ColumnSpan="2" Content="マスクに文字を表示する" IsChecked="{Binding ShowLabel}" />
+                                <TextBlock Grid.Row="2" Text="表示する文字" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="2" Grid.Column="1" Width="200" HorizontalAlignment="Left" Margin="0,3" Text="{Binding LabelText}" />
+                                <TextBlock Grid.Row="7" Text="表示する画像(マスクに敷き詰め)" VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="7" Grid.Column="1" Orientation="Horizontal" Margin="0,3">
+                                    <TextBox x:Name="LabelImageBox" Width="300" Text="{Binding LabelImagePath, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button Content="参照…" Margin="6,0,0,0" Click="BrowseLabelImage_Click" />
+                                    <Button Content="クリア" Click="ClearLabelImage_Click" />
+                                </StackPanel>
+                                <TextBlock Grid.Row="3" Text="モザイクの粗さ(ピクセル)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="3" Grid.Column="1" Width="80" HorizontalAlignment="Left" Margin="0,3" Text="{Binding MosaicBlockSize}" />
+                                <TextBlock Grid.Row="4" Text="ぼかしの強さ(4〜100)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="4" Grid.Column="1" Width="80" HorizontalAlignment="Left" Margin="0,3" Text="{Binding BlurStrength}" />
+                                <TextBlock Grid.Row="8" Text="手動マスクのモザイク/ぼかしの更新間隔(ミリ秒)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="8" Grid.Column="1" Width="80" HorizontalAlignment="Left" Margin="0,3" Text="{Binding MosaicRefreshMs}" />
+                                <TextBlock Grid.Row="5" Text="パニック時のメッセージ" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="5" Grid.Column="1" Width="300" HorizontalAlignment="Left" Margin="0,3" Text="{Binding PanicMessage}" />
+                                <CheckBox Grid.Row="6" Grid.ColumnSpan="2" Content="この操作パネルを画面共有・録画に映さない" IsChecked="{Binding HidePanelFromCapture}" />
+                            </Grid>
+                        </GroupBox>
+
+                        <GroupBox Header="ホットキー(例: Ctrl+Alt+M)" DataContext="{Binding Hotkeys}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="240" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="マスク全体のON/OFF" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="0" Grid.Column="1" Width="160" HorizontalAlignment="Left" Margin="0,3" Text="{Binding ToggleMasks}" />
+                                <TextBlock Grid.Row="1" Text="パニック(全画面を隠す)" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="1" Grid.Column="1" Width="160" HorizontalAlignment="Left" Margin="0,3" Text="{Binding Panic}" />
+                                <TextBlock Grid.Row="2" Text="手動マスクの編集モード" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="2" Grid.Column="1" Width="160" HorizontalAlignment="Left" Margin="0,3" Text="{Binding EditMode}" />
+                                <TextBlock Grid.Row="3" Text="自動検出のON/OFF" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="3" Grid.Column="1" Width="160" HorizontalAlignment="Left" Margin="0,3" Text="{Binding ToggleDetection}" />
+                                <TextBlock Grid.Row="4" Text="操作パネルを最前面に出す" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="4" Grid.Column="1" Width="160" HorizontalAlignment="Left" Margin="0,3" Text="{Binding ShowPanel}" />
+                            </Grid>
+                        </GroupBox>
+
+                        <GroupBox Header="診断ログ(開発・動作確認用)" DataContext="{Binding Diagnostics}">
+                            <StackPanel>
+                                <CheckBox x:Name="DiagnosticsToggle" IsChecked="{Binding Enabled}" Click="DiagnosticsToggle_Click"
+                                          Content="CPU・メモリ使用量と処理の状況を1秒ごとに記録する(チェックするとすぐ記録を始め、設定も保存します)" />
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <Button Content="ログのフォルダーを開く" Click="OpenDiagnosticsFolder_Click" />
+                                    <TextBlock x:Name="DiagnosticsPathText" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,0"
+                                           Text="保存先: %APPDATA%\StageMask\diag(CSV。Excelで開けます)。1ファイル10MBを超えたら次のファイルに切り替え、新しい10ファイルだけを残します。記録するのは数値と操作の種類(パニックON など)だけで、画面の文字・NGワード・ウィンドウのタイトルは記録しません。" />
+                            </StackPanel>
+                        </GroupBox>
+
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="表示・ホットキーの設定を適用・保存" Style="{StaticResource PrimaryButton}" Click="ApplyAppearance_Click" />
+                            <TextBlock x:Name="AppearanceSavedText" Style="{StaticResource SavedText}" />
+                        </StackPanel>
+                        <TextBlock x:Name="HotkeyErrorText" Foreground="{DynamicResource SystemFillColorCriticalBrush}" TextWrapping="Wrap" Margin="0,8,0,12" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>
