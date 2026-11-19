@@ -239,7 +239,7 @@ public sealed class SensitiveTextDetector
     /// <summary>
     /// 入力途中・読み取り途中のメールアドレス。ドメインが「.com」などで終わっていない場合は、
     /// OCRが単語を途中で分けて残りを読み違えた(「l」を「|」と読むなど)可能性があるため、
-    /// すぐ右隣(文字1つ分以内)にある単語を2つまで含めて隠す。
+    /// すぐ右隣(文字1つ分以内)にある単語を4つまで含めて隠す(「le」「.」「com」のように細かく分かれることがある)。
     /// </summary>
     private static void AddPartialEmailMatches(string text, List<int> map, OcrLineBox line, List<DetectionResult> results)
     {
@@ -254,11 +254,12 @@ public sealed class SensitiveTextDetector
                 {
                     int lastWord = -1;
                     for (int i = m.Index + m.Length - 1; i >= m.Index && lastWord < 0; i--) lastWord = map[i];
-                    for (int k = 1; k <= 2 && lastWord >= 0 && lastWord + 1 < line.Words.Count; k++)
+                    // 「.」だけの単語は高さがとても小さいので、行の中で一番高い単語の高さを基準にする
+                    double h = Math.Max(1, line.Words.Max(w => w.Box.Height));
+                    for (int k = 1; k <= 4 && lastWord >= 0 && lastWord + 1 < line.Words.Count; k++)
                     {
                         var prev = line.Words[lastWord].Box;
                         var next = line.Words[lastWord + 1].Box;
-                        double h = Math.Max(1, Math.Max(prev.Height, next.Height));
                         if (next.X - prev.Right > h * 0.8) break;
                         box = box.Union(next);
                         lastWord++;

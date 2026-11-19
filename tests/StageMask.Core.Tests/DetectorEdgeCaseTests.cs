@@ -96,6 +96,21 @@ public class DetectorEdgeCaseTests
     }
 
     [Fact]
+    public void Email_SplitIntoManyFragments_MasksAll()
+    {
+        // 「test@examp」「le」「.」「com」(「.」の矩形は小さい)
+        var line = new OcrLineBox(new[]
+        {
+            new OcrWordBox("test@examp", new RectD(0, 0, 100, 20)),
+            new OcrWordBox("le", new RectD(102, 0, 20, 20)),
+            new OcrWordBox(".", new RectD(126, 16, 4, 4)),
+            new OcrWordBox("c|m", new RectD(138, 6, 30, 14)), // 読み違え
+        });
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Email).ToList();
+        Assert.True(d.Max(x => x.Box.Right) >= 168);
+    }
+
+    [Fact]
     public void Lines_OnDifferentRows_AreNotMerged()
     {
         var a = new OcrLineBox(new[] { new OcrWordBox("test@examp", new RectD(0, 0, 100, 20)) });
