@@ -21,6 +21,8 @@ internal partial class MainWindow : Window
     private readonly ResourceMonitor _resources = new();
     private readonly DiagnosticsRecorder _diagnostics;
     private HotkeyManager? _hotkeys;
+    /// <summary>最後に適用できたホットキー(不正な値を入れて適用したときに戻す先)</summary>
+    private HotkeySettings _lastGoodHotkeys = new();
     private bool _confirmedClose;
 
     public MainWindow(MaskController controller)
@@ -62,7 +64,10 @@ internal partial class MainWindow : Window
         base.OnSourceInitialized(e);
         ApplyCaptureExclusion();
         _hotkeys = new HotkeyManager(this);
-        RegisterHotkeys();
+        // 設定ファイルに不正な値が入っていた場合は既定値で登録する
+        var startupReverted = RevertInvalidHotkeys(new HotkeySettings());
+        if (startupReverted.Count > 0) _controller.Save();
+        RegisterHotkeys(startupReverted);
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -326,21 +331,41 @@ internal partial class MainWindow : Window
 
     private void ApplyAppearance_Click(object sender, RoutedEventArgs e)
     {
+        // 解釈できない・重複したホットキーは保存せず、前回まで使えていた値に戻す
+        var reverted = RevertInvalidHotkeys(_lastGoodHotkeys);
         _controller.ApplySettings();
         ApplyCaptureExclusion();
-        RegisterHotkeys();
+        RegisterHotkeys(reverted);
         string? warning = null;
-        if (!string.IsNullOrEmpty(HotkeyErrorText.Text)) warning = "一部のホットキーは登録できませんでした";
+        if (reverted.Count > 0) warning = "正しくないホットキーは保存せず、以前の値に戻しました";
+        else if (!string.IsNullOrEmpty(HotkeyErrorText.Text)) warning = "一部のホットキーは登録できませんでした";
         else if (_controller.LastError?.StartsWith("塗りつぶし色", StringComparison.Ordinal) == true) warning = "塗りつぶし色を解釈できないため黒を使います";
         ShowSaved(AppearanceSavedText, warning);
     }
 
-    private void RegisterHotkeys()
+    /// <summary>
+    /// 不正なホットキーを lastGood の値に戻し、入力欄も戻した値で表示し直す。戻した内容の説明を返す。
+    /// </summary>
+    private List<string> RevertInvalidHotkeys(HotkeySettings lastGood)
+    {
+        var h = _controller.Settings.Hotkeys;
+        var messages = HotkeySettingsValidator.RevertInvalid(h, lastGood, HotkeyManager.Validate);
+        if (messages.Count > 0)
+        {
+            // HotkeySettings は変更通知を持たないため、入力欄を結び直して表示を更新する
+            HotkeyGroup.DataContext = null;
+            HotkeyGroup.DataContext = h;
+        }
+        _lastGoodHotkeys = HotkeySettingsValidator.Copy(h);
+        return messages;
+    }
+
+    private void RegisterHotkeys(List<string>? reverted = null)
     {
         if (_hotkeys is null) return;
         _hotkeys.UnregisterAll();
         var h = _controller.Settings.Hotkeys;
-        var errors = new List<string>();
+        var errors = new List<string>(reverted ?? new List<string>());
         void Reg(string text, Action action)
         {
             var err = _hotkeys.Register(text, action);

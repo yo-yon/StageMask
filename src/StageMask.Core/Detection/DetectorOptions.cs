@@ -18,7 +18,7 @@ public sealed class DetectorOptions
     public IReadOnlyList<string> NgWords { get; init; } = new List<string>();
 
     /// <summary>
-    /// NGワードのあいまい一致。4文字以上のNGワードについて、1文字までの誤認識を許容する。
+    /// NGワードのあいまい一致。4文字以上のNGワードは1文字、8文字以上は2文字までの誤認識(置き換え・読み落とし・余分な文字)を許容する。
     /// OCRの誤読(例: 「榎」→「框」)で取りこぼすのを防ぐ。
     /// </summary>
     public bool FuzzyNgWords { get; init; } = true;

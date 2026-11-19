@@ -113,6 +113,12 @@ internal sealed class MaskController : IDisposable
     /// <summary>マスク上に表示する画像を読み込めなかった理由</summary>
     public string? ContentImageError => _contentImages.LastError;
     public string? LastError { get; private set; }
+
+    /// <summary>LastError が指定の種類のエラーなら消す(直った後も状態欄に残り続けないように)。</summary>
+    private void ClearError(string prefix)
+    {
+        if (LastError?.StartsWith(prefix, StringComparison.Ordinal) == true) LastError = null;
+    }
     public string OcrStatus => _worker.OcrStatus;
     public string CaptureStatus => _worker.CaptureStatus;
     public string? WorkerError => _worker.LastError;
@@ -221,6 +227,7 @@ internal sealed class MaskController : IDisposable
         try
         {
             _store.Save(Settings);
+            ClearError("設定の保存に失敗"); // 保存できたら、前回の失敗の表示を消す
         }
         catch (Exception ex)
         {
@@ -739,6 +746,7 @@ internal sealed class MaskController : IDisposable
             var brush = new SolidColorBrush(color);
             brush.Freeze();
             _solidBrush = brush;
+            ClearError("塗りつぶし色"); // 正しい色に直したら、前回の警告を消す
         }
         catch (Exception)
         {

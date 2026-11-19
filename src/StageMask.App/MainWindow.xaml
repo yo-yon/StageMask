@@ -182,7 +182,7 @@
                                 <CheckBox Content="APIキー・トークン・接続文字列・パスワード" IsChecked="{Binding DetectSecret}" />
                                 <CheckBox Content="└ 形式不明の長いランダム文字列も含める(過剰検出が増えることがあります)" Margin="20,3,0,3" IsChecked="{Binding DetectGenericSecret}" />
                                 <CheckBox Content="NGワード(下の一覧)" IsChecked="{Binding DetectNgWords}" />
-                                <CheckBox Content="└ あいまい一致(4文字以上のNGワードで1文字までの誤読を許容)" Margin="20,3,0,3" IsChecked="{Binding FuzzyNgWords}" />
+                                <CheckBox Content="└ あいまい一致(4文字以上のNGワードで1文字、8文字以上で2文字までの誤読を許容)" Margin="20,3,0,3" IsChecked="{Binding FuzzyNgWords}" />
                             </StackPanel>
                         </GroupBox>
 
@@ -310,7 +310,7 @@
                             </Grid>
                         </GroupBox>
 
-                        <GroupBox Header="ホットキー(例: Ctrl+Alt+M)" DataContext="{Binding Hotkeys}">
+                        <GroupBox x:Name="HotkeyGroup" Header="ホットキー(例: Ctrl+Alt+M)" DataContext="{Binding Hotkeys}">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="240" />

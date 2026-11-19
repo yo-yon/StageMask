@@ -23,16 +23,33 @@ internal sealed class HotkeyManager : IDisposable
         _source.AddHook(WndProc);
     }
 
+    /// <summary>キーの組み合わせとして正しいか(登録はしない)。問題があれば理由を返す。</summary>
+    public static string? Validate(string gestureText)
+        => TryResolve(gestureText, out _, out _, out var error) ? null : error;
+
+    private static bool TryResolve(string gestureText, out HotkeyGesture gesture, out Key key, out string? error)
+    {
+        key = Key.None;
+        error = null;
+        if (!HotkeyGesture.TryParse(gestureText, out gesture))
+        {
+            error = $"「{gestureText}」は解釈できません(例: Ctrl+Alt+M)";
+            return false;
+        }
+        var keyName = gesture.Key;
+        if (keyName.Length == 1 && char.IsDigit(keyName[0])) keyName = "D" + keyName; // "1" → Key.D1
+        if (!Enum.TryParse<Key>(keyName, ignoreCase: true, out key) || key == Key.None)
+        {
+            error = $"「{gesture.Key}」というキーはありません";
+            return false;
+        }
+        return true;
+    }
+
     /// <summary>ホットキーを登録する。失敗した場合はエラー内容を返す。</summary>
     public string? Register(string gestureText, Action action)
     {
-        if (!HotkeyGesture.TryParse(gestureText, out var gesture))
-            return $"「{gestureText}」は解釈できません(例: Ctrl+Alt+M)";
-
-        var keyName = gesture.Key;
-        if (keyName.Length == 1 && char.IsDigit(keyName[0])) keyName = "D" + keyName; // "1" → Key.D1
-        if (!Enum.TryParse<Key>(keyName, ignoreCase: true, out var key) || key == Key.None)
-            return $"「{gesture.Key}」というキーはありません";
+        if (!TryResolve(gestureText, out var gesture, out var key, out var error)) return error;
 
         int vk = KeyInterop.VirtualKeyFromKey(key);
         int id = _nextId++;

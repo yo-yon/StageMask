@@ -306,26 +306,65 @@ public sealed class SensitiveTextDetector
         foreach (var word in _ngWords)
         {
             // 完全一致
+            var taken = new List<(int Start, int End)>();
             int idx = 0;
             while ((idx = text.IndexOf(word, idx, StringComparison.Ordinal)) >= 0)
             {
                 results.Add(new DetectionResult(DetectionCategory.NgWord, word, BoxFor(idx, word.Length, map, line)));
+                taken.Add((idx, idx + word.Length));
                 idx += 1;
             }
 
-            // あいまい一致(1文字までの置換を許容)
-            if (_options.FuzzyNgWords && word.Length >= _options.FuzzyMinLength && text.Length >= word.Length)
+            // あいまい一致: OCRの読み違えを許容する。8文字以上の語は2文字まで、それ未満は1文字まで。
+            // 置き換え(啇/商)のほか、1文字の読み落とし・余分な1文字にも対応する(編集距離)。
+            // 長い語で2文字まで許すのは、読み違いが重なって語の一部(「株式会社」など)が見えてしまうのを防ぐため。
+            // 似た別の語(同じ「株式会社」で終わる別の社名など)まで隠すことがあるが、隠しすぎる側に倒す。
+            if (_options.FuzzyNgWords && word.Length >= _options.FuzzyMinLength)
             {
-                for (int start = 0; start + word.Length <= text.Length; start++)
+                int allowed = word.Length >= 8 ? 2 : 1;
+                var candidates = new List<(int Start, int Len, int Dist)>();
+                for (int start = 0; start < text.Length; start++)
+                    for (int len = word.Length - 1; len <= word.Length + 1; len++)
+                    {
+                        if (len <= 0 || start + len > text.Length) continue;
+                        int d = BoundedEditDistance(text, start, len, word, allowed);
+                        if (d >= 1 && d <= allowed) candidates.Add((start, len, d));
+                    }
+                // 近いもの(距離が小さく、語の長さに近いもの)から順に、重ならないものだけ採る
+                foreach (var c in candidates.OrderBy(c => c.Dist).ThenBy(c => Math.Abs(c.Len - word.Length)).ThenBy(c => c.Start))
                 {
-                    int diff = 0;
-                    for (int k = 0; k < word.Length && diff <= 1; k++)
-                        if (text[start + k] != word[k]) diff++;
-                    if (diff == 1)
-                        results.Add(new DetectionResult(DetectionCategory.NgWord, word, BoxFor(start, word.Length, map, line)));
+                    int end = c.Start + c.Len;
+                    if (taken.Any(t => c.Start < t.End && t.Start < end)) continue;
+                    taken.Add((c.Start, end));
+                    results.Add(new DetectionResult(DetectionCategory.NgWord, word, BoxFor(c.Start, c.Len, map, line)));
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// text[start..start+len) と word の編集距離(置き換え・挿入・削除の回数)。max を超えたら max+1 を返す。
+    /// </summary>
+    private static int BoundedEditDistance(string text, int start, int len, string word, int max)
+    {
+        if (Math.Abs(len - word.Length) > max) return max + 1;
+        var prev = new int[word.Length + 1];
+        var cur = new int[word.Length + 1];
+        for (int j = 0; j <= word.Length; j++) prev[j] = j;
+        for (int i = 1; i <= len; i++)
+        {
+            cur[0] = i;
+            int rowMin = cur[0];
+            for (int j = 1; j <= word.Length; j++)
+            {
+                int cost = text[start + i - 1] == word[j - 1] ? 0 : 1;
+                cur[j] = Math.Min(Math.Min(prev[j] + 1, cur[j - 1] + 1), prev[j - 1] + cost);
+                rowMin = Math.Min(rowMin, cur[j]);
+            }
+            if (rowMin > max) return max + 1;
+            (prev, cur) = (cur, prev);
+        }
+        return prev[word.Length];
     }
 
     /// <summary>

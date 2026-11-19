@@ -314,11 +314,36 @@ public class DetectorEdgeCaseTests
         Assert.Contains(Detect(options, Line("ｱｻﾋ 御中")), x => x.Category == DetectionCategory.NgWord);
     }
 
+    // v0.5.23: 8文字以上の語は2文字違いまで隠す(隠しすぎる側。読み違いが重なって語の一部が見えるのを防ぐ)
     [Fact]
-    public void NgWord_Fuzzy_DoesNotMatchTwoDifferences()
+    public void NgWord_Fuzzy_LongWord_ToleratesTwoDifferences()
     {
         var options = new DetectorOptions { NgWords = new[] { "朝日商事株式会社" } };
-        Assert.Empty(Detect(options, CharLine("朝目啇事株式会社"))); // 2文字違い
+        var line = CharLine("朝目啇事株式会社");
+        var d = Detect(options, line).Where(x => x.Category == DetectionCategory.NgWord).ToList();
+        Assert.NotEmpty(d);
+        Assert.True(d.Max(x => x.Box.Right) >= line.Words[^1].Box.Right, "「株式会社」まで隠す");
+    }
+
+    [Fact]
+    public void NgWord_Fuzzy_LongWord_DoesNotMatchThreeDifferences()
+    {
+        var options = new DetectorOptions { NgWords = new[] { "朝日商事株式会社" } };
+        Assert.Empty(Detect(options, CharLine("朝目啇亊株式会社"))); // 3文字違い
+    }
+
+    [Fact]
+    public void NgWord_Fuzzy_ShortWord_DoesNotMatchTwoDifferences()
+    {
+        var options = new DetectorOptions { NgWords = new[] { "朝日商事" } };
+        Assert.Empty(Detect(options, CharLine("朝目啇事"))); // 4文字の語で2文字違い
+    }
+
+    [Fact]
+    public void NgWord_Fuzzy_ToleratesOneMissingCharacter()
+    {
+        var options = new DetectorOptions { NgWords = new[] { "朝日商事株式会社" } };
+        Assert.Contains(Detect(options, CharLine("朝日商事株式社")), x => x.Category == DetectionCategory.NgWord); // 「会」の読み落とし
     }
 
     [Fact]
