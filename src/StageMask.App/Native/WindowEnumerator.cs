@@ -102,7 +102,7 @@ internal static class WindowEnumerator
             frameRect,
             NativeMethods.IsIconic(h),
             popupLike,
-            CanOcclude(ex));
+            OcclusionPolicy.CanOcclude(style, ex, title));
     }
 
     /// <summary>位置・最小化状態だけを再取得する(毎フレーム呼ぶ軽量版)。閉じられていれば null。</summary>
@@ -126,19 +126,6 @@ internal static class WindowEnumerator
                                                      out NativeMethods.RECT r, Marshal.SizeOf<NativeMethods.RECT>());
         if (hr != 0 || r.Width <= 0 || r.Height <= 0) return null;
         return new RectD(r.Left, r.Top, r.Width, r.Height);
-    }
-
-    /// <summary>
-    /// 後ろのウィンドウを隠している(=後ろのウィンドウのマスクを描かなくてよい)とみなせるか。
-    /// クリックが素通りする透明なウィンドウや、最前面の半透明オーバーレイ(画面録画・ゲームのオーバーレイなど)は
-    /// 後ろが透けて見えるので、覆っているとはみなさない(マスクを残す=安全側)。
-    /// </summary>
-    private static bool CanOcclude(long exStyle)
-    {
-        if ((exStyle & NativeMethods.WS_EX_TRANSPARENT) != 0) return false;
-        bool layered = (exStyle & NativeMethods.WS_EX_LAYERED) != 0;
-        if (layered && (exStyle & (NativeMethods.WS_EX_TOPMOST | NativeMethods.WS_EX_NOACTIVATE)) != 0) return false;
-        return true;
     }
 
     private static bool IsCloaked(IntPtr h)

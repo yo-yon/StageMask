@@ -307,6 +307,8 @@ internal sealed class MaskController : IDisposable
         }
 
         var visuals = new List<MaskVisual>();
+        _occludedMasks = 0;
+        _occluderApps.Clear();
         var targets = new Dictionary<IntPtr, WorkTarget>();
         var detectIds = new List<long>();
         var manualTargets = new List<ManualMosaicTarget>();
@@ -481,6 +483,8 @@ internal sealed class MaskController : IDisposable
         PendingMaskCount = pendingMasks;
         ScrollMaskCount = scrollMasks;
         VideoWindowCount = videoWindows;
+        OccludedMaskCount = _occludedMasks;
+        OccluderApps = string.Join(" ", _occluderApps.OrderBy(a => a, StringComparer.OrdinalIgnoreCase));
         foreach (var kv in _wheelUntil)
             if (kv.Value <= now) _wheelUntil.TryRemove(kv.Key, out _);
 
@@ -527,9 +531,9 @@ internal sealed class MaskController : IDisposable
     /// w より手前(重なり順で上)にあり、後ろを覆い隠すウィンドウの範囲。
     /// w と重なるものだけ、位置を取り直して返す(列挙は 250ms ごとなので、動かした直後のずれを防ぐ)。
     /// </summary>
-    private List<RectD> OccludersAbove(WindowInfo w)
+    private List<(RectD Rect, string App)> OccludersAbove(WindowInfo w)
     {
-        var result = new List<RectD>();
+        var result = new List<(RectD Rect, string App)>();
         foreach (var o in _windows)
         {
             if (o.Handle == w.Handle) return result;
@@ -537,22 +541,37 @@ internal sealed class MaskController : IDisposable
             if (!o.FrameRect.Inflate(64).IntersectsWith(w.FrameRect)) continue;
             var fresh = WindowEnumerator.RefreshGeometry(o);
             if (fresh is null || fresh.IsMinimized) continue;
-            if (fresh.FrameRect.IntersectsWith(w.FrameRect)) result.Add(fresh.FrameRect);
+            if (fresh.FrameRect.IntersectsWith(w.FrameRect)) result.Add((fresh.FrameRect, o.ProcessName));
         }
         // 列挙した一覧に w がない(列挙の後に現れた): 重なり順が分からないので、何も覆っていないとみなす(安全側)
-        return new List<RectD>();
+        return new List<(RectD Rect, string App)>();
     }
+
+    // 診断ログ用: 手前のウィンドウに重なったため省いた・切り抜いたマスクの数と、そのウィンドウのアプリ名(毎回数え直す)
+    private int _occludedMasks;
+    private readonly HashSet<string> _occluderApps = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>手前のウィンドウに重なったため省いた・切り抜いたマスクの数(直近の描画時点)</summary>
+    public int OccludedMaskCount { get; private set; }
+    /// <summary>そのとき手前にあったウィンドウのアプリ名(プロセス名、空白区切り)</summary>
+    public string OccluderApps { get; private set; } = "";
 
     /// <summary>
     /// 手前のウィンドウに重なる部分を除いてマスクを追加する。完全に隠れていれば追加しない。
     /// 塗りつぶしだけのマスクは、見えている部分だけに切り分ける。モザイク・ぼかし・文字や画像入りのマスクは
     /// 切り分けると見た目が崩れるため、1つのまま描いて、重なる部分を描画時に切り抜く。
     /// </summary>
-    private static void AddClipped(List<MaskVisual> visuals, MaskVisual v, List<RectD> occluders)
+    private void AddClipped(List<MaskVisual> visuals, MaskVisual v, List<(RectD Rect, string App)> occluders)
     {
         if (occluders.Count == 0) { visuals.Add(v); return; }
-        var hits = occluders.Where(o => o.IntersectsWith(v.ScreenRect)).ToList();
-        if (hits.Count == 0) { visuals.Add(v); return; }
+        var hitPairs = occluders.Where(o => o.Rect.IntersectsWith(v.ScreenRect)).ToList();
+        if (hitPairs.Count == 0) { visuals.Add(v); return; }
+        if (v.Kind != MaskKind.DebugBox)
+        {
+            _occludedMasks++;
+            foreach (var h in hitPairs) _occluderApps.Add(h.App);
+        }
+        var hits = hitPairs.Select(h => h.Rect).ToList();
         if (RectD.IsFullyCovered(v.ScreenRect, hits)) return;
         if (v.Image is not null || !string.IsNullOrEmpty(v.Text) || v.ContentImage is not null || v.ManualId is not null)
         {

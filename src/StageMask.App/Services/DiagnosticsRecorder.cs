@@ -97,6 +97,8 @@ internal sealed class DiagnosticsRecorder
             Panic = c.Panic,
             EditMode = c.EditMode,
             Events = string.Join(" / ", events),
+            OccludedMasks = c.OccludedMaskCount,
+            OccluderApps = c.OccluderApps,
         };
 
         try

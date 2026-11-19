@@ -65,3 +65,26 @@ public class HotkeyValidatorTests
         Assert.Empty(messages);
     }
 }
+
+public class OcclusionPolicyTests
+{
+    private const uint Overlapped = 0x00C00000 | 0x00040000; // タイトルバー + サイズ変更枠
+
+    [Fact]
+    public void NormalAppWindow_Occludes()
+        => Assert.True(StageMask.Core.Geometry.OcclusionPolicy.CanOcclude(Overlapped, 0, "メモ帳"));
+
+    [Fact]
+    public void FramelessResizableAppWindow_Occludes() // Electron のタイトルバーなしウィンドウなど
+        => Assert.True(StageMask.Core.Geometry.OcclusionPolicy.CanOcclude(0x80000000 | 0x00040000, 0, "Claude"));
+
+    [Theory]
+    [InlineData(0x80000000u, 0L, "Overlay")]                 // 枠のないポップアップ(全画面オーバーレイなど)
+    [InlineData(Overlapped, 0x00080000L, "App")]             // 透明度を持てるウィンドウ
+    [InlineData(Overlapped, 0x00000020L, "App")]             // クリックが素通りする
+    [InlineData(Overlapped, 0x00000080L, "App")]             // ツールウィンドウ
+    [InlineData(Overlapped, 0x08000000L, "App")]             // アクティブにならない
+    [InlineData(Overlapped, 0L, "")]                         // タイトルなし
+    public void UncertainWindows_DoNotOcclude(uint style, long ex, string title)
+        => Assert.False(StageMask.Core.Geometry.OcclusionPolicy.CanOcclude(style, ex, title));
+}

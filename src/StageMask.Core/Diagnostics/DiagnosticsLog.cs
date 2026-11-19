@@ -58,6 +58,10 @@ public sealed record DiagnosticsSample
     public bool DetectionEnabled { get; init; }
     public bool Panic { get; init; }
     public bool EditMode { get; init; }
+    /// <summary>この1行の間に、手前のウィンドウに重なったため省いた・切り抜いたマスクの数</summary>
+    public int OccludedMasks { get; init; }
+    /// <summary>そのとき手前にあったウィンドウのアプリ名(プロセス名。タイトルは記録しない)。空白区切り</summary>
+    public string OccluderApps { get; init; } = "";
     /// <summary>この1行の間に起きた出来事(決まった文言。例: "設定を保存", "パニックON")</summary>
     public string Events { get; init; } = "";
 }
@@ -71,7 +75,7 @@ public sealed class DiagnosticsLog
         "overlays", "hidden_windows", "detect_targets", "detection_masks", "pending_masks", "scroll_masks", "video_windows", "fail_closed",
         "ocr_cycle_ms", "check_round_ms", "ocr_full", "ocr_bands", "ocr_skipped", "capture_failures", "wheel_events",
         "renders", "render_ms", "max_visuals", "check_capture_ms", "check_signature_ms", "max_capture_ms", "gc_committed_mb",
-        "masks_enabled", "detection_enabled", "panic", "edit_mode", "events",
+        "masks_enabled", "detection_enabled", "panic", "edit_mode", "events", "occluded_masks", "occluder_apps",
     };
 
     private readonly string _directory;
@@ -160,6 +164,8 @@ public sealed class DiagnosticsLog
             Bool(s.Panic),
             Bool(s.EditMode),
             Escape(s.Events),
+            s.OccludedMasks.ToString(c),
+            Escape(s.OccluderApps),
         };
         return string.Join(",", v);
     }
