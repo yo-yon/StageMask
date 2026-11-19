@@ -73,13 +73,15 @@ internal sealed class ContentOverrideDialog : Window
         fields.Children.Add(_text);
         fields.Children.Add(new TextBlock { Text = "表示する画像(空欄なら画像なし。マスク全体に敷き詰めて表示)" });
         fields.Children.Add(imageRow);
-        fields.Children.Add(new TextBlock
+        var note = new TextBlock
         {
             Text = "画像は塗りつぶしのマスクにだけ表示します(モザイク/ぼかしでは文字だけ表示)。",
-            Foreground = System.Windows.Media.Brushes.Gray,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 0),
-        });
+        };
+        // 固定の灰色はダークモードで読みにくいため、テーマの「補足の文字」の色にする
+        note.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
+        fields.Children.Add(note);
         // 個別設定がOFFの間は入力欄を無効にする
         fields.SetBinding(IsEnabledProperty, new System.Windows.Data.Binding(nameof(CheckBox.IsChecked)) { Source = _useCustom });
 

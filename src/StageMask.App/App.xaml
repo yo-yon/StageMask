@@ -69,9 +69,24 @@
                 <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
             </Style>
+            <!--
+                ダークモードで、チェックボックスなどの文字がカードの背景に沈んで読みにくくなるため、
+                文字色を明示的に「主要な文字」の色(TextFillColorPrimaryBrush)にする。
+                DynamicResource なので、Windows のライト/ダーク切り替えにも追従する。
+            -->
             <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
                 <Setter Property="Margin" Value="0,2" />
                 <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            </Style>
+            <Style TargetType="RadioButton" BasedOn="{StaticResource {x:Type RadioButton}}">
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            </Style>
+            <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            </Style>
+            <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
