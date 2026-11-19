@@ -13,7 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>StageMask</AssemblyName>
     <RootNamespace>StageMask.App</RootNamespace>
-    <Version>0.5.20</Version>
+    <Version>0.5.21</Version>
     <Product>StageMask</Product>
     <Description>登壇・画面共有中に見せてはいけない領域を隠すオーバーレイツール</Description>
   </PropertyGroup>

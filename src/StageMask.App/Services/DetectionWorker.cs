@@ -353,8 +353,17 @@ internal sealed class DetectionWorker : IDisposable
 
         if (_detector is null || !ReferenceEquals(_detectorOptions, cfg.DetectorOptions))
         {
+            bool changed = _detector is not null;
             _detector = new SensitiveTextDetector(cfg.DetectorOptions);
             _detectorOptions = cfg.DetectorOptions;
+            if (changed)
+            {
+                // 検出する情報・NGワードが変わったら、どのウィンドウも全体を読み直す。
+                // 「確認済み」のままだと、内容が変わるまで古い判定(追加したNGワードが隠れない、
+                // OFFにした種類が隠れたまま)が続くため。これまでの検出結果は読み直しで置き換わるまで残す(安全側)
+                foreach (var st in _states.Values)
+                    lock (st.Gate) st.Verified = null;
+            }
         }
     }
 
