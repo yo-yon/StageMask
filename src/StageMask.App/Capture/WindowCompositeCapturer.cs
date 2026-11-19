@@ -27,15 +27,23 @@ internal static class WindowCompositeCapturer
         var compositor = new RegionCompositor(region);
         if (compositor.Width == 0 || compositor.Height == 0) return null;
 
-        // 手前のウィンドウに完全に隠れているものは取り込まない(無駄を省く)
+        // 手前のウィンドウに完全に隠れているものは取り込まない(無駄を省く)。
+        // 取り込めなかった・真っ黒だったウィンドウは「覆っている」側に数えない(奥のウィンドウを描くため)
         var above = new List<RectD>();
-        var needed = new List<WindowInfo>();
+        var needed = new List<(WindowInfo Window, CapturedFrame Frame)>();
         foreach (var w in windowsTopToBottom)
         {
             if (w.IsMinimized) continue;
+            // クリックが素通りする透明なウィンドウや最前面の半透明オーバーレイ(画面録画ツールなど)は、
+            // PrintWindow で取り込むと真っ黒になり、下の画面をすべて覆ってしまうため使わない
+            if (!w.CanOcclude) continue;
             var visiblePart = w.FrameRect.Intersect(compositor.Region);
             if (visiblePart.IsEmpty) continue;
-            if (!RectD.IsFullyCovered(visiblePart, above)) needed.Add(w);
+            if (RectD.IsFullyCovered(visiblePart, above)) continue;
+            ct.ThrowIfCancellationRequested();
+            var frame = await capture(w.Handle).ConfigureAwait(false);
+            if (frame is null || FrameHeuristics.IsLikelyBlackFrame(frame.Pixels, frame.Width, frame.Height, frame.Stride)) continue;
+            needed.Add((w, frame));
             above.Add(w.FrameRect);
             if (RectD.IsFullyCovered(compositor.Region, above)) break; // これより奥は見えない
         }
@@ -60,10 +68,7 @@ internal static class WindowCompositeCapturer
         // 奥から順に描く
         for (int i = needed.Count - 1; i >= 0; i--)
         {
-            ct.ThrowIfCancellationRequested();
-            var w = needed[i];
-            var frame = await capture(w.Handle).ConfigureAwait(false);
-            if (frame is null) continue;
+            var (w, frame) = needed[i];
             var origin = frame.Origin == CaptureOrigin.WindowRect ? w.WindowRect : w.FrameRect;
             compositor.Draw(frame.Pixels, frame.Width, frame.Height, frame.Stride, origin.X, origin.Y, w.FrameRect);
         }
