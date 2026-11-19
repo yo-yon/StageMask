@@ -258,7 +258,7 @@
                                 <TextBlock Grid.Row="5" Text="大部分とみなす割合(%)" VerticalAlignment="Center" />
                                 <TextBox Grid.Row="5" Grid.Column="1" Width="100" HorizontalAlignment="Left" Margin="0,3" Text="{Binding LargeChangePercent}" />
                                 <CheckBox Grid.Row="6" Grid.ColumnSpan="2" IsChecked="{Binding IgnoreClockChanges}"
-                                          Content="時計・会議の経過時間のように、数字だけが毎秒変わる小さな部分は先に隠さない(ちらつき防止)" />
+                                          Content="時計・会議の経過時間のように、繰り返し少しずつ変わる小さな部分は先に隠さない(ちらつき防止。読み取りは続ける)" />
                                 <CheckBox Grid.Row="7" Grid.ColumnSpan="2" IsChecked="{Binding VideoTileMask}"
                                           Content="会議の映像・動画のように動き続けるウィンドウは、全体ではなく変わった部分だけ隠す" />
                                 <TextBlock Grid.Row="8" Grid.ColumnSpan="2" Style="{StaticResource Hint}"

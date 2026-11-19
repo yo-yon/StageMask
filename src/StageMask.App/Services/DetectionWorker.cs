@@ -101,7 +101,7 @@ internal sealed class WindowScanState
         var changed = sig.ChangedTiles(Verified);
         // 時計・会議タイマーのように数字だけが変わる小さな変化は、先に隠さない(OCR は行う)
         if (ignoreClocks && Clocks is not null && Clocks.IsSameLayout(sig))
-            changed = Clocks.ExcludeClockTiles(changed);
+            changed = Clocks.ExcludeClockTiles(changed, DateTime.UtcNow);
         PendingFraction = sig.TileCount == 0 ? 0 : (double)changed.Count / sig.TileCount;
         // 隣のタイルまで広げて隠す(行の境目にまたがった文字・確認の合間に変わった部分の取りこぼしを防ぐ)
         Pending = DetectionWorker.TilesToRects(sig, sig.Dilate(changed, 1));
@@ -693,7 +693,7 @@ internal sealed class DetectionWorker : IDisposable
                     if (cfg.IgnoreClocks)
                     {
                         if (state.Clocks is null || !state.Clocks.IsSameLayout(sig)) state.Clocks = new ClockTileMap(sig);
-                        state.Clocks.Update(dirty, words);
+                        state.Clocks.Update(dirty, words, items.Select(i => i.Item1), now);
                     }
                     if (state.LatestSig is not null) state.UpdatePending(state.LatestSig, cfg.ChangeMask, cfg.IgnoreClocks);
                 }

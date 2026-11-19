@@ -126,4 +126,43 @@ public class ShiftEstimateTests
         }
         Assert.Null(Sig(b).EstimateVerticalShift(Sig(a)));
     }
+    // v0.5.28: OCR で時計と読めなくても、繰り返し変わり隠す情報が出てこないマスは先に隠さない
+    [Fact]
+    public void RepeatedlyChangingTileWithoutDetections_BecomesTicker()
+    {
+        var map = new ClockTileMap(FrameSignature.Compute(new byte[192 * 144 * 4], 192, 144, 192 * 4));
+        var t0 = new System.DateTime(2026, 11, 19, 12, 0, 0, System.DateTimeKind.Utc);
+        var noise = new[] { new OcrWordBox("録画中 12:3A", new RectD(52, 60, 60, 12)) }; // 読み違えて時計と判定できない
+        for (int k = 0; k < 3; k++)
+            map.Update(new[] { (1, 1) }, noise, System.Array.Empty<RectD>(), t0.AddSeconds(k));
+        Assert.False(map.IsClock(1, 1));
+        Assert.True(map.IsTicker(1, 1, t0.AddSeconds(2.5)));
+        Assert.Empty(map.ExcludeClockTiles(new List<(int, int)> { (1, 1) }, t0.AddSeconds(2.5)));
+        // しばらく変わらなければ元に戻る
+        Assert.False(map.IsTicker(1, 1, t0.AddSeconds(10)));
+    }
+
+    [Fact]
+    public void TileWithDetection_IsNotTicker()
+    {
+        var map = new ClockTileMap(FrameSignature.Compute(new byte[192 * 144 * 4], 192, 144, 192 * 4));
+        var t0 = new System.DateTime(2026, 11, 19, 12, 0, 0, System.DateTimeKind.Utc);
+        for (int k = 0; k < 3; k++)
+            map.Update(new[] { (1, 1) }, System.Array.Empty<OcrWordBox>(), System.Array.Empty<RectD>(), t0.AddSeconds(k));
+        // 隠す情報が出てきたら数え直す
+        map.Update(new[] { (1, 1) }, System.Array.Empty<OcrWordBox>(), new[] { new RectD(50, 50, 20, 10) }, t0.AddSeconds(3));
+        Assert.False(map.IsTicker(1, 1, t0.AddSeconds(3)));
+    }
+
+    [Fact]
+    public void LargeChanges_DoNotCountAsTicks()
+    {
+        var map = new ClockTileMap(FrameSignature.Compute(new byte[240 * 144 * 4], 240, 144, 240 * 4));
+        var t0 = new System.DateTime(2026, 11, 19, 12, 0, 0, System.DateTimeKind.Utc);
+        var all = new List<(int, int)>();
+        for (int r = 0; r < 3; r++) for (int c = 0; c < 5; c++) all.Add((c, r)); // 15件(スクロールなどの大きな変化)
+        for (int k = 0; k < 4; k++)
+            map.Update(all, System.Array.Empty<OcrWordBox>(), System.Array.Empty<RectD>(), t0.AddSeconds(k));
+        Assert.False(map.IsTicker(1, 1, t0.AddSeconds(3)));
+    }
 }

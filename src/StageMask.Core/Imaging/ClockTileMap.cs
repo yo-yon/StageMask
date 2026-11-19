@@ -15,6 +15,17 @@ public sealed class ClockTileMap
 {
     private readonly int _columns, _rows, _tileSize;
     private readonly bool[] _clock;
+    // 「繰り返し少しずつ変わり、読み直しても隠す情報が出てこないマス」(タイマーの周りの表示など)。
+    // OCR の読み取りに頼らず、変わり方で判断する(小さい時計の数字は読み違えやすく、隣の文字と同じマスになることもあるため)
+    private readonly int[] _tickCount;
+    private readonly DateTime[] _lastTick;
+
+    /// <summary>この時間(秒)以内に繰り返し変わったマスを「繰り返し変わるマス」とみなす</summary>
+    public const double TickWindowSeconds = 3.0;
+    /// <summary>この回数以上続けて、隠す情報が出てこないまま変わったら「繰り返し変わるマス」とみなす</summary>
+    public const int TickThreshold = 3;
+    /// <summary>1回の読み直しで変わったマスがこれより多いときは、繰り返しの変化とはみなさない(スクロール・画面切り替えなど)</summary>
+    public const int SmallChangeTiles = 12;
 
     public ClockTileMap(FrameSignature layout)
     {
@@ -22,6 +33,18 @@ public sealed class ClockTileMap
         _rows = layout.Rows;
         _tileSize = layout.TileSize;
         _clock = new bool[_columns * _rows];
+        _tickCount = new int[_columns * _rows];
+        _lastTick = new DateTime[_columns * _rows];
+    }
+
+    /// <summary>
+    /// 繰り返し少しずつ変わり、そのたびに読み直しても隠す情報(メール・NGワードなど)が出てこないマスか。
+    /// </summary>
+    public bool IsTicker(int column, int row, DateTime now)
+    {
+        if (column < 0 || row < 0 || column >= _columns || row >= _rows) return false;
+        int i = row * _columns + column;
+        return _tickCount[i] >= TickThreshold && (now - _lastTick[i]).TotalSeconds <= TickWindowSeconds;
     }
 
     public bool IsSameLayout(FrameSignature sig) =>
@@ -35,10 +58,28 @@ public sealed class ClockTileMap
     /// words の座標は画像全体の座標。どのエンジンの結果も渡してよい(1つでも時計以外の文字があれば時計ではない)。
     /// </summary>
     public void Update(IEnumerable<(int Column, int Row)> dirtyTiles, IEnumerable<OcrWordBox> words)
+        => Update(dirtyTiles, words, Array.Empty<RectD>(), DateTime.UtcNow);
+
+    /// <param name="detections">今回の読み直しで見つかった、隠す情報の範囲(画像全体の座標)</param>
+    public void Update(IEnumerable<(int Column, int Row)> dirtyTiles, IEnumerable<OcrWordBox> words,
+                       IEnumerable<RectD> detections, DateTime now)
     {
         var dirty = new HashSet<int>();
         foreach (var (c, r) in dirtyTiles)
             if (c >= 0 && r >= 0 && c < _columns && r < _rows) dirty.Add(r * _columns + c);
+
+        // 繰り返し変わるマスの記録。隠す情報が出てきたマスは数え直す
+        var sensitive = new HashSet<int>();
+        foreach (var d in detections)
+            foreach (var i in TilesOf(d)) sensitive.Add(i);
+        bool small = dirty.Count <= SmallChangeTiles;
+        foreach (var i in dirty)
+        {
+            if (!small || sensitive.Contains(i)) { _tickCount[i] = 0; _lastTick[i] = now; continue; }
+            _tickCount[i] = (now - _lastTick[i]).TotalSeconds <= TickWindowSeconds ? _tickCount[i] + 1 : 1;
+            _lastTick[i] = now;
+        }
+        foreach (var i in sensitive) if (!dirty.Contains(i)) _tickCount[i] = 0;
 
         var hasClock = new HashSet<int>();
         var hasOther = new HashSet<int>();
@@ -64,12 +105,30 @@ public sealed class ClockTileMap
     /// 大きな変化(スクロールなど)のときは、時計のマスも含めてそのまま返す。
     /// </summary>
     public List<(int Column, int Row)> ExcludeClockTiles(List<(int Column, int Row)> changed, int maxTiles = 6)
+        => ExcludeClockTiles(changed, DateTime.UtcNow, maxTiles);
+
+    /// <summary>
+    /// 先に隠す対象から、時計のマスと「繰り返し変わるマス」を除く。変化が小さいとき(maxTiles 以下)だけ除く。
+    /// 大きな変化(スクロールなど)のときは、そのまま返す。除いたマスも OCR はこれまでどおり行う。
+    /// </summary>
+    public List<(int Column, int Row)> ExcludeClockTiles(List<(int Column, int Row)> changed, DateTime now, int maxTiles = SmallChangeTiles)
     {
         if (changed.Count > maxTiles) return changed;
         var result = new List<(int, int)>(changed.Count);
         foreach (var t in changed)
-            if (!IsClock(t.Column, t.Row)) result.Add(t);
+            if (!IsClock(t.Column, t.Row) && !IsTicker(t.Column, t.Row, now)) result.Add(t);
         return result;
+    }
+
+    private IEnumerable<int> TilesOf(RectD r)
+    {
+        int c0 = Math.Max(0, (int)Math.Floor(r.X / _tileSize));
+        int c1 = Math.Min(_columns - 1, (int)Math.Floor((r.X + r.Width - 1) / _tileSize));
+        int r0 = Math.Max(0, (int)Math.Floor(r.Y / _tileSize));
+        int r1 = Math.Min(_rows - 1, (int)Math.Floor((r.Y + r.Height - 1) / _tileSize));
+        for (int y = r0; y <= r1; y++)
+            for (int x = c0; x <= c1; x++)
+                yield return y * _columns + x;
     }
 
     internal enum TextKind { Neutral, Clock, Other }
