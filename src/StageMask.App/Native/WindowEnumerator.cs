@@ -18,7 +18,8 @@ internal sealed record WindowInfo(
     RectD WindowRect,   // GetWindowRect(不可視のリサイズ枠を含む)
     RectD FrameRect,    // DWMWA_EXTENDED_FRAME_BOUNDS(見た目どおりの範囲)
     bool IsMinimized,
-    bool IsPopupLike = false) // メニュー・入力候補・ツールチップなど、本体に付随する小さなウィンドウ
+    bool IsPopupLike = false, // メニュー・入力候補・ツールチップなど、本体に付随する小さなウィンドウ
+    bool CanOcclude = true)   // 後ろのウィンドウを覆い隠す(不透明な)ウィンドウとみなしてよいか
 {
     /// <summary>ウィンドウ選択リスト用の表示名</summary>
     public string Display => $"{ProcessName} — {Title}";
@@ -100,7 +101,8 @@ internal static class WindowEnumerator
             windowRect,
             frameRect,
             NativeMethods.IsIconic(h),
-            popupLike);
+            popupLike,
+            CanOcclude(ex));
     }
 
     /// <summary>位置・最小化状態だけを再取得する(毎フレーム呼ぶ軽量版)。閉じられていれば null。</summary>
@@ -124,6 +126,19 @@ internal static class WindowEnumerator
                                                      out NativeMethods.RECT r, Marshal.SizeOf<NativeMethods.RECT>());
         if (hr != 0 || r.Width <= 0 || r.Height <= 0) return null;
         return new RectD(r.Left, r.Top, r.Width, r.Height);
+    }
+
+    /// <summary>
+    /// 後ろのウィンドウを隠している(=後ろのウィンドウのマスクを描かなくてよい)とみなせるか。
+    /// クリックが素通りする透明なウィンドウや、最前面の半透明オーバーレイ(画面録画・ゲームのオーバーレイなど)は
+    /// 後ろが透けて見えるので、覆っているとはみなさない(マスクを残す=安全側)。
+    /// </summary>
+    private static bool CanOcclude(long exStyle)
+    {
+        if ((exStyle & NativeMethods.WS_EX_TRANSPARENT) != 0) return false;
+        bool layered = (exStyle & NativeMethods.WS_EX_LAYERED) != 0;
+        if (layered && (exStyle & (NativeMethods.WS_EX_TOPMOST | NativeMethods.WS_EX_NOACTIVATE)) != 0) return false;
+        return true;
     }
 
     private static bool IsCloaked(IntPtr h)

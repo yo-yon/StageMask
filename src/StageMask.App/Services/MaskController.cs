@@ -45,6 +45,7 @@ internal sealed class MaskController : IDisposable
     private volatile WorkTarget[] _targets = Array.Empty<WorkTarget>();
     private volatile ManualMosaicTarget[] _manualTargets = Array.Empty<ManualMosaicTarget>();
     private volatile WindowInfo[] _windowsTopToBottom = Array.Empty<WindowInfo>();
+    private IntPtr _lastForeground;
     private HashSet<IntPtr> _visibleHandles = new();
     private readonly WheelMonitor _wheelMonitor;
 
@@ -280,8 +281,12 @@ internal sealed class MaskController : IDisposable
     private void TickCore()
     {
         var now = DateTime.UtcNow;
-        if (now - _lastEnumUtc >= EnumerateInterval)
+        // 前面のウィンドウが切り替わったら、すぐに重なり順を取り直す
+        // (古い重なり順のままだと、前に出てきたウィンドウのマスクを描き漏らすため)
+        var foreground = NativeMethods.GetForegroundWindow();
+        if (now - _lastEnumUtc >= EnumerateInterval || foreground != _lastForeground)
         {
+            _lastForeground = foreground;
             _windows = WindowEnumerator.GetWindows();
             _windowsTopToBottom = _windows.ToArray();
             _visibleHandles = ComputeVisibleWindows(_windows);
@@ -353,14 +358,17 @@ internal sealed class MaskController : IDisposable
                 var w = WindowEnumerator.RefreshGeometry(raw);
                 if (w is null || w.IsMinimized) continue;
                 if (w.FrameRect.Width < 8 || w.FrameRect.Height < 8) continue; // 実体のない補助ウィンドウ
+                // このウィンドウより手前にあるウィンドウ。そこに重なるマスクは描かない
+                // (後ろのウィンドウのマスクが、手前のウィンドウの内容を隠してしまうため)
+                var occluders = OccludersAbove(w);
 
                 if (hide is not null)
                 {
                     ImageSource? image = null;
                     if (hide.Style != MaskStyle.Solid && _windowImages.TryGetValue(w.Handle, out var img)) image = img;
                     var c = Content(hide.Content, hide.Style);
-                    visuals.Add(new MaskVisual(w.FrameRect.Inflate(WindowMaskPaddingPx), MaskKind.Window, hide.Style, image,
-                                               Text: c.Text, ContentImage: _contentImages.Get(c.ImagePath)));
+                    AddClipped(visuals, new MaskVisual(w.FrameRect.Inflate(WindowMaskPaddingPx), MaskKind.Window, hide.Style, image,
+                                               Text: c.Text, ContentImage: _contentImages.Get(c.ImagePath)), occluders);
                     hiddenCount++;
                     if (hide.Style != MaskStyle.Solid) AddTarget(targets, w, ocr: false, detectStyle: MaskStyle.Solid, fullImage: true, windowStyle: hide.Style);
                 }
@@ -387,15 +395,15 @@ internal sealed class MaskController : IDisposable
                                         (now - pending.LastMotionUtc).TotalMilliseconds < Math.Clamp(Settings.Detection.WheelMaskMs, 100, 5000));
                     if (hide is null && (wheeling || largeChange))
                     {
-                        visuals.Add(new MaskVisual(w.FrameRect.Inflate(WindowMaskPaddingPx), MaskKind.Window, MaskStyle.Solid, null));
+                        AddClipped(visuals, new MaskVisual(w.FrameRect.Inflate(WindowMaskPaddingPx), MaskKind.Window, MaskStyle.Solid, null), occluders);
                         scrollMasks++;
                     }
                     // フェイルクローズ: 検査できていないウィンドウは、部分マスクではなく全体を隠す
                     else if (hide is null && Settings.Detection.FailClosed && !_scanStatus.IsSafe(id, now, maxScanAge))
                     {
                         var c = Content(detect.Content, MaskStyle.Solid);
-                        visuals.Add(new MaskVisual(w.FrameRect.Inflate(WindowMaskPaddingPx), MaskKind.Window, MaskStyle.Solid, null,
-                                                   Text: c.Text, ContentImage: _contentImages.Get(c.ImagePath)));
+                        AddClipped(visuals, new MaskVisual(w.FrameRect.Inflate(WindowMaskPaddingPx), MaskKind.Window, MaskStyle.Solid, null,
+                                                   Text: c.Text, ContentImage: _contentImages.Get(c.ImagePath)), occluders);
                         failClosed++;
                         failReason ??= $"{w.ProcessName}: {_scanStatus.GetFailureReason(id) ?? "検査待ち"}";
                     }
@@ -407,11 +415,11 @@ internal sealed class MaskController : IDisposable
                         {
                             var screen = MapToScreen(item, w);
                             if (screen.IsEmpty) continue;
-                            visuals.Add(new MaskVisual(screen, MaskKind.Detection, detect.Style, item.Payload?.Image,
-                                                       Text: c.Text, ContentImage: contentImage));
+                            AddClipped(visuals, new MaskVisual(screen, MaskKind.Detection, detect.Style, item.Payload?.Image,
+                                                       Text: c.Text, ContentImage: contentImage), occluders);
                             detectionMasks++;
                             if (Settings.Detection.ShowDebugBoxes)
-                                visuals.Add(new MaskVisual(screen, MaskKind.DebugBox, MaskStyle.Solid, null));
+                                AddClipped(visuals, new MaskVisual(screen, MaskKind.DebugBox, MaskStyle.Solid, null), occluders);
                         }
 
                         // まだOCRで検査していない(取り込み後に変化した)部分は、検査が終わるまで塗りつぶす
@@ -421,7 +429,7 @@ internal sealed class MaskController : IDisposable
                             {
                                 var screen = MapFrameRect(r, pending.Geometry, w).Inflate(2);
                                 if (screen.IsEmpty) continue;
-                                visuals.Add(new MaskVisual(screen, MaskKind.Detection, MaskStyle.Solid, null));
+                                AddClipped(visuals, new MaskVisual(screen, MaskKind.Detection, MaskStyle.Solid, null), occluders);
                                 pendingMasks++;
                             }
                         }
@@ -507,6 +515,54 @@ internal sealed class MaskController : IDisposable
 
     private ResolvedMaskContent Content(MaskContentOverride? custom, MaskStyle style)
         => MaskContentResolver.Resolve(Settings.Appearance, custom, style);
+
+    /// <summary>
+    /// w より手前(重なり順で上)にあり、後ろを覆い隠すウィンドウの範囲。
+    /// w と重なるものだけ、位置を取り直して返す(列挙は 250ms ごとなので、動かした直後のずれを防ぐ)。
+    /// </summary>
+    private List<RectD> OccludersAbove(WindowInfo w)
+    {
+        var result = new List<RectD>();
+        foreach (var o in _windows)
+        {
+            if (o.Handle == w.Handle) return result;
+            if (!o.CanOcclude || o.IsMinimized) continue;
+            if (!o.FrameRect.Inflate(64).IntersectsWith(w.FrameRect)) continue;
+            var fresh = WindowEnumerator.RefreshGeometry(o);
+            if (fresh is null || fresh.IsMinimized) continue;
+            if (fresh.FrameRect.IntersectsWith(w.FrameRect)) result.Add(fresh.FrameRect);
+        }
+        // 列挙した一覧に w がない(列挙の後に現れた): 重なり順が分からないので、何も覆っていないとみなす(安全側)
+        return new List<RectD>();
+    }
+
+    /// <summary>
+    /// 手前のウィンドウに重なる部分を除いてマスクを追加する。完全に隠れていれば追加しない。
+    /// 塗りつぶしだけのマスクは、見えている部分だけに切り分ける。モザイク・ぼかし・文字や画像入りのマスクは
+    /// 切り分けると見た目が崩れるため、一部でも見えていればそのまま全体を描く(隠しすぎる側に倒す)。
+    /// </summary>
+    private static void AddClipped(List<MaskVisual> visuals, MaskVisual v, List<RectD> occluders)
+    {
+        if (occluders.Count == 0) { visuals.Add(v); return; }
+        var hits = occluders.Where(o => o.IntersectsWith(v.ScreenRect)).ToList();
+        if (hits.Count == 0) { visuals.Add(v); return; }
+        if (RectD.IsFullyCovered(v.ScreenRect, hits)) return;
+        if (v.Image is not null || !string.IsNullOrEmpty(v.Text) || v.ContentImage is not null || v.ManualId is not null)
+        {
+            visuals.Add(v);
+            return;
+        }
+        var pieces = new List<RectD> { v.ScreenRect };
+        foreach (var o in hits)
+        {
+            var next = new List<RectD>();
+            foreach (var r in pieces) next.AddRange(r.Subtract(o));
+            pieces = next;
+            pieces.RemoveAll(r => r.Width < 1 || r.Height < 1);
+            if (pieces.Count > 64) { visuals.Add(v); return; } // 細かく割れすぎたら全体を描く
+        }
+        foreach (var r in pieces) visuals.Add(v with { ScreenRect = r });
+    }
 
     /// <summary>手前のウィンドウに完全に隠れていないウィンドウ(画面全体モードの検査対象)。</summary>
     private static HashSet<IntPtr> ComputeVisibleWindows(List<WindowInfo> windowsTopToBottom)
