@@ -173,7 +173,20 @@ internal sealed class OverlayWindow : Window
             return;
         }
 
-        AddAt(CreateMaskElement(v, state, local), local);
+        var element = CreateMaskElement(v, state, local);
+        if (v.Occluded is { Count: > 0 })
+        {
+            // 手前のウィンドウに重なる部分を切り抜く(座標は要素の左上が原点)
+            var holes = new GeometryGroup { FillRule = FillRule.Nonzero };
+            foreach (var o in v.Occluded)
+            {
+                var r = ToLocal(o);
+                holes.Children.Add(new RectangleGeometry(new Rect(r.X - local.X, r.Y - local.Y, r.Width, r.Height)));
+            }
+            element.Clip = new CombinedGeometry(GeometryCombineMode.Exclude,
+                new RectangleGeometry(new Rect(0, 0, local.Width, local.Height)), holes);
+        }
+        AddAt(element, local);
 
         if (state.EditMode && v.Kind == MaskKind.Manual)
         {

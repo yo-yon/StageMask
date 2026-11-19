@@ -29,7 +29,9 @@ internal sealed record MaskVisual(
     ImageSource? Image,
     Guid? ManualId = null,
     string? Text = null,
-    ImageSource? ContentImage = null);
+    ImageSource? ContentImage = null,
+    // 手前のウィンドウに重なっていて描かない範囲(物理ピクセル)。切り分けられないマスク(モザイク・文字入りなど)で使う
+    System.Collections.Generic.IReadOnlyList<StageMask.Core.Geometry.RectD>? Occluded = null);
 
 /// <summary>オーバーレイ全体の描画状態。</summary>
 internal sealed record OverlayState(

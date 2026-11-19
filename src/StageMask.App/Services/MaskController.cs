@@ -539,7 +539,7 @@ internal sealed class MaskController : IDisposable
     /// <summary>
     /// 手前のウィンドウに重なる部分を除いてマスクを追加する。完全に隠れていれば追加しない。
     /// 塗りつぶしだけのマスクは、見えている部分だけに切り分ける。モザイク・ぼかし・文字や画像入りのマスクは
-    /// 切り分けると見た目が崩れるため、一部でも見えていればそのまま全体を描く(隠しすぎる側に倒す)。
+    /// 切り分けると見た目が崩れるため、1つのまま描いて、重なる部分を描画時に切り抜く。
     /// </summary>
     private static void AddClipped(List<MaskVisual> visuals, MaskVisual v, List<RectD> occluders)
     {
@@ -549,7 +549,8 @@ internal sealed class MaskController : IDisposable
         if (RectD.IsFullyCovered(v.ScreenRect, hits)) return;
         if (v.Image is not null || !string.IsNullOrEmpty(v.Text) || v.ContentImage is not null || v.ManualId is not null)
         {
-            visuals.Add(v);
+            // 切り分けると見た目が崩れるので、1つのまま描いて重なる部分だけ切り抜く
+            visuals.Add(v with { Occluded = hits });
             return;
         }
         var pieces = new List<RectD> { v.ScreenRect };
@@ -559,7 +560,7 @@ internal sealed class MaskController : IDisposable
             foreach (var r in pieces) next.AddRange(r.Subtract(o));
             pieces = next;
             pieces.RemoveAll(r => r.Width < 1 || r.Height < 1);
-            if (pieces.Count > 64) { visuals.Add(v); return; } // 細かく割れすぎたら全体を描く
+            if (pieces.Count > 64) { visuals.Add(v with { Occluded = hits }); return; } // 細かく割れすぎたら切り抜きで描く
         }
         foreach (var r in pieces) visuals.Add(v with { ScreenRect = r });
     }
