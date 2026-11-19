@@ -169,6 +169,21 @@ public class DetectorEdgeCaseTests
     }
 
     [Fact]
+    public void Email_LocalPartSplitByOcr_MasksTheFrontToo()
+    {
+        var line = new OcrLineBox(new[]
+        {
+            new OcrWordBox("line", new RectD(0, 0, 40, 20)),
+            new OcrWordBox("05", new RectD(52, 0, 20, 20)),
+            new OcrWordBox("mai", new RectD(84, 0, 30, 20)),
+            new OcrWordBox("l5@example.com", new RectD(116, 0, 140, 20)),
+        });
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Email).ToList();
+        Assert.True(d.Min(x => x.Box.X) <= 84, "前の「mai」も隠す");
+        Assert.True(d.Min(x => x.Box.X) > 72, "空白で離れた「05」は巻き込まない");
+    }
+
+    [Fact]
     public void Lines_OnDifferentRows_AreNotMerged()
     {
         var a = new OcrLineBox(new[] { new OcrWordBox("test@examp", new RectD(0, 0, 100, 20)) });

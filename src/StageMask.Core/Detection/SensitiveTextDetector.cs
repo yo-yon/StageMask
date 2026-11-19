@@ -191,7 +191,7 @@ public sealed class SensitiveTextDetector
         var ng = ngText.ToString();
 
         if (_options.DetectEmail)
-            AddRegexMatches(EmailRx, rx, rxMap, line, DetectionCategory.Email, results);
+            AddRegexMatches(EmailRx, rx, rxMap, line, DetectionCategory.Email, results, extendToAdjacent: true, keyFragments: false);
         if (_options.DetectEmail)
             AddPartialEmailMatches(rx, rxMap, line, results);
 
@@ -231,7 +231,7 @@ public sealed class SensitiveTextDetector
 
     private static void AddRegexMatches(Regex regex, string text, List<int> map, OcrLineBox line,
                                         DetectionCategory category, List<DetectionResult> results,
-                                        bool extendToAdjacent = false)
+                                        bool extendToAdjacent = false, bool keyFragments = true)
     {
         try
         {
@@ -239,7 +239,7 @@ public sealed class SensitiveTextDetector
             {
                 if (m.Length == 0) continue;
                 var box = BoxFor(m.Index, m.Length, map, line);
-                if (extendToAdjacent) box = ExtendToAdjacentWords(box, m.Index, m.Length, map, line);
+                if (extendToAdjacent) box = ExtendToAdjacentWords(box, m.Index, m.Length, map, line, keyFragments);
                 results.Add(new DetectionResult(category, m.Value, box));
             }
         }
@@ -262,7 +262,8 @@ public sealed class SensitiveTextDetector
             foreach (Match m in PartialEmailRx.Matches(text))
             {
                 if (m.Length == 0) continue;
-                var box = BoxFor(m.Index, m.Length, map, line);
+                // 前側(ローカル部)がOCRで別の単語に分かれた場合(「mai」「l5@example.com」)も含める
+                var box = ExtendToAdjacentWords(BoxFor(m.Index, m.Length, map, line), m.Index, m.Length, map, line, keyFragments: false);
                 bool complete = EmailRx.Match(m.Value) is { Success: true } full && full.Index + full.Length == m.Value.Length;
                 if (!complete)
                 {
@@ -350,9 +351,9 @@ public sealed class SensitiveTextDetector
 
     /// <summary>
     /// キーやパスワードは、OCRが記号を読み違えると(「#」「|」など)一致する範囲が途中で切れ、残りが見えてしまう。
-    /// 一致した単語の左右に、空白をはさまず(文字の高さの35%以下の隙間で)くっついている単語を4つまで含める。
+    /// 一致した単語の左右に、空白をはさまずくっついている単語(とキーの断片に見える単語)を4つまで含める。
     /// </summary>
-    private static RectD ExtendToAdjacentWords(RectD box, int start, int length, List<int> map, OcrLineBox line)
+    private static RectD ExtendToAdjacentWords(RectD box, int start, int length, List<int> map, OcrLineBox line, bool keyFragments = true)
     {
         int first = -1, last = -1;
         for (int i = start; i < start + length && i < map.Count; i++)
@@ -362,14 +363,22 @@ public sealed class SensitiveTextDetector
             last = map[i];
         }
         if (first < 0) return box;
-        return ExtendWordRange(box, first, last, line);
+        return ExtendWordRange(box, first, last, line, keyFragments);
     }
 
-    private static RectD ExtendWordRange(RectD box, int first, int last, OcrLineBox line)
+    /// <param name="keyFragments">
+    /// true: 空白をはさんでいても、キーの一部に見える断片(数字・記号入りなど)は文字の高さ1.2倍までの隙間なら含める。
+    /// false: 空白をはさまずくっついている単語だけ含める(メールアドレス用)。
+    /// </param>
+    private static RectD ExtendWordRange(RectD box, int first, int last, OcrLineBox line, bool keyFragments = true)
     {
         double h = Math.Max(1, line.Words.Max(w => w.Box.Height));
+        // 「空白なし」の基準は HasSpaceBetween と同じ(文字の高さの20%以下の隙間)。メールアドレスはより厳しくする
+        double touch = keyFragments ? 0.2 : 0.12;
+        // 日本語OCRは1文字ずつ単語に分けるため、日本語の文字(「メールは」「です」)は含めない
         bool Joinable(double gap, string? word) =>
-            gap <= h * 0.35 || (gap <= h * 1.2 && LooksKeyFragment(word));
+            IsAsciiWord(word) &&
+            (gap <= h * touch || (keyFragments && gap <= h * 1.2 && LooksKeyFragment(word)));
         for (int k = 0; k < 4 && last + 1 < line.Words.Count; k++)
         {
             var a = line.Words[last].Box; var b = line.Words[last + 1];
@@ -404,6 +413,13 @@ public sealed class SensitiveTextDetector
             else if (c is '-' or '_' or '#' or '+' or '/' or '~' or '|' or '=') symbol = true;
         }
         return digit || (upper && lower && word.Length >= 4 && !IsCapitalizedWord(word)) || symbol;
+    }
+
+    private static bool IsAsciiWord(string? w)
+    {
+        if (string.IsNullOrEmpty(w)) return false;
+        foreach (var c in w) if (c > 0x7E || c < 0x21) return false;
+        return true;
     }
 
     /// <summary>「Hello」のように先頭だけ大文字のふつうの単語。</summary>
