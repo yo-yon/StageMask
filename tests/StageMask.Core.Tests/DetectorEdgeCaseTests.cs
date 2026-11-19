@@ -141,6 +141,25 @@ public class DetectorEdgeCaseTests
     }
 
     [Fact]
+    public void Secret_GenericToken_ExtendsOverKeyFragmentsAcrossGaps()
+    {
+        // OCRが「-」を読み落とし、「sk-proj」「本体」「StUv#x」の3つの単語に分かれた
+        var line = new OcrLineBox(new[]
+        {
+            new OcrWordBox("key:", new RectD(0, 0, 40, 20)),
+            new OcrWordBox("sk-proj", new RectD(52, 0, 70, 20)),
+            new OcrWordBox("AbCdEf1234567890GhIjKlMnOpQr", new RectD(134, 0, 280, 20)),
+            new OcrWordBox("StUv#x", new RectD(426, 0, 60, 20)),
+            new OcrWordBox("is", new RectD(498, 0, 20, 20)),
+        });
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Secret).ToList();
+        Assert.True(d.Min(x => x.Box.X) <= 52, "前の「sk-proj」も隠す");
+        Assert.True(d.Max(x => x.Box.Right) >= 486, "後ろの「StUv#x」も隠す");
+        Assert.True(d.Min(x => x.Box.X) > 40, "ラベルの「key:」は巻き込まない");
+        Assert.True(d.Max(x => x.Box.Right) < 498, "ふつうの単語「is」は巻き込まない");
+    }
+
+    [Fact]
     public void Lines_OnDifferentRows_AreNotMerged()
     {
         var a = new OcrLineBox(new[] { new OcrWordBox("test@examp", new RectD(0, 0, 100, 20)) });

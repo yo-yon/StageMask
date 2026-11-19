@@ -198,9 +198,12 @@ public sealed class SensitiveTextDetector
                 AddRegexMatches(r, rx, rxMap, line, DetectionCategory.Secret, results, extendToAdjacent: true);
 
         if (_options.DetectSecret && _options.DetectGenericSecret)
-            foreach (var w in line.Words)
+            for (int wi = 0; wi < line.Words.Count; wi++)
+            {
+                var w = line.Words[wi];
                 if (LooksLikeRandomToken(w.Text))
-                    results.Add(new DetectionResult(DetectionCategory.Secret, w.Text, w.Box));
+                    results.Add(new DetectionResult(DetectionCategory.Secret, w.Text, ExtendWordRange(w.Box, wi, wi, line)));
+            }
 
         if (_options.DetectNgWords && _ngWords.Count > 0)
             AddNgWordMatches(ng, ngMap, line, results);
@@ -353,20 +356,56 @@ public sealed class SensitiveTextDetector
             last = map[i];
         }
         if (first < 0) return box;
+        return ExtendWordRange(box, first, last, line);
+    }
+
+    private static RectD ExtendWordRange(RectD box, int first, int last, OcrLineBox line)
+    {
         double h = Math.Max(1, line.Words.Max(w => w.Box.Height));
+        bool Joinable(double gap, string? word) =>
+            gap <= h * 0.35 || (gap <= h * 1.2 && LooksKeyFragment(word));
         for (int k = 0; k < 4 && last + 1 < line.Words.Count; k++)
         {
-            var a = line.Words[last].Box; var b = line.Words[last + 1].Box;
-            if (b.X - a.Right > h * 0.35) break;
-            box = box.Union(b); last++;
+            var a = line.Words[last].Box; var b = line.Words[last + 1];
+            if (!Joinable(b.Box.X - a.Right, b.Text)) break;
+            box = box.Union(b.Box); last++;
         }
         for (int k = 0; k < 4 && first - 1 >= 0; k++)
         {
-            var a = line.Words[first - 1].Box; var b = line.Words[first].Box;
-            if (b.X - a.Right > h * 0.35) break;
-            box = box.Union(a); first--;
+            var a = line.Words[first - 1]; var b = line.Words[first].Box;
+            if (!Joinable(b.X - a.Box.Right, a.Text)) break;
+            box = box.Union(a.Box); first--;
         }
         return box;
+    }
+
+    /// <summary>
+    /// キーの一部に見える断片か(OCRが「-」を読み落として「sk-proj」と残りを別の単語にした場合など)。
+    /// 数字を含む・大文字と小文字が混在する・「-」「_」「#」などの記号を含むもの。
+    /// 「key:」「Password=」のようなラベル(末尾が「:」「=」)や、ふつうの英単語は含めない。
+    /// </summary>
+    private static bool LooksKeyFragment(string? word)
+    {
+        if (string.IsNullOrEmpty(word) || word.Length < 2) return false;
+        char lastChar = word[^1];
+        if (lastChar is ':' or '=' or '：' or '＝') return false;
+        bool digit = false, upper = false, lower = false, symbol = false;
+        foreach (var c in word)
+        {
+            if (char.IsDigit(c)) digit = true;
+            else if (char.IsUpper(c)) upper = true;
+            else if (char.IsLower(c)) lower = true;
+            else if (c is '-' or '_' or '#' or '+' or '/' or '~' or '|' or '=') symbol = true;
+        }
+        return digit || (upper && lower && word.Length >= 4 && !IsCapitalizedWord(word)) || symbol;
+    }
+
+    /// <summary>「Hello」のように先頭だけ大文字のふつうの単語。</summary>
+    private static bool IsCapitalizedWord(string w)
+    {
+        if (!char.IsUpper(w[0])) return false;
+        for (int i = 1; i < w.Length; i++) if (!char.IsLower(w[i])) return false;
+        return true;
     }
 
     private static RectD BoxFor(int start, int length, List<int> map, OcrLineBox line)
