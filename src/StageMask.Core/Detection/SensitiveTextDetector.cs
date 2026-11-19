@@ -185,7 +185,7 @@ public sealed class SensitiveTextDetector
         if (_options.DetectEmail)
             AddRegexMatches(EmailRx, rx, rxMap, line, DetectionCategory.Email, results);
         if (_options.DetectEmail)
-            AddRegexMatches(PartialEmailRx, rx, rxMap, line, DetectionCategory.Email, results);
+            AddPartialEmailMatches(rx, rxMap, line, results);
 
         if (_options.DetectIdentifier)
             foreach (var r in IdentifierRx)
@@ -233,6 +233,43 @@ public sealed class SensitiveTextDetector
         {
             // 照合が終わらない行は、行全体を隠す
             results.Add(new DetectionResult(category, "(timeout)", BoxFor(0, map.Count, map, line)));
+        }
+    }
+
+    /// <summary>
+    /// 入力途中・読み取り途中のメールアドレス。ドメインが「.com」などで終わっていない場合は、
+    /// OCRが単語を途中で分けて残りを読み違えた(「l」を「|」と読むなど)可能性があるため、
+    /// すぐ右隣(文字1つ分以内)にある単語を2つまで含めて隠す。
+    /// </summary>
+    private static void AddPartialEmailMatches(string text, List<int> map, OcrLineBox line, List<DetectionResult> results)
+    {
+        try
+        {
+            foreach (Match m in PartialEmailRx.Matches(text))
+            {
+                if (m.Length == 0) continue;
+                var box = BoxFor(m.Index, m.Length, map, line);
+                bool complete = EmailRx.Match(m.Value) is { Success: true } full && full.Index + full.Length == m.Value.Length;
+                if (!complete)
+                {
+                    int lastWord = -1;
+                    for (int i = m.Index + m.Length - 1; i >= m.Index && lastWord < 0; i--) lastWord = map[i];
+                    for (int k = 1; k <= 2 && lastWord >= 0 && lastWord + 1 < line.Words.Count; k++)
+                    {
+                        var prev = line.Words[lastWord].Box;
+                        var next = line.Words[lastWord + 1].Box;
+                        double h = Math.Max(1, Math.Max(prev.Height, next.Height));
+                        if (next.X - prev.Right > h * 0.8) break;
+                        box = box.Union(next);
+                        lastWord++;
+                    }
+                }
+                results.Add(new DetectionResult(DetectionCategory.Email, m.Value, box));
+            }
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            results.Add(new DetectionResult(DetectionCategory.Email, "(timeout)", BoxFor(0, map.Count, map, line)));
         }
     }
 

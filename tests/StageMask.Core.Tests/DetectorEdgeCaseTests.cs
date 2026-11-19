@@ -87,6 +87,15 @@ public class DetectorEdgeCaseTests
     }
 
     [Fact]
+    public void Email_SplitAndRestMisread_MasksAdjacentWord()
+    {
+        // 後半を「|e.mmm」のように読み違えた場合も、すぐ隣の単語まで隠す
+        var line = Line("Contact: test@examp |e.mmm");
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Email).ToList();
+        Assert.True(d.Max(x => x.Box.Right) >= line.Words[^1].Box.Right);
+    }
+
+    [Fact]
     public void Lines_OnDifferentRows_AreNotMerged()
     {
         var a = new OcrLineBox(new[] { new OcrWordBox("test@examp", new RectD(0, 0, 100, 20)) });
