@@ -96,12 +96,49 @@ public sealed class SensitiveTextDetector
     public IReadOnlyList<DetectionResult> Detect(IEnumerable<OcrLineBox> lines)
     {
         var results = new List<DetectionResult>();
-        foreach (var line in lines)
+        foreach (var line in MergeSameRowLines(lines))
         {
             if (line.Words.Count == 0) continue;
             DetectInLine(line, results);
         }
         return Deduplicate(results);
+    }
+
+    /// <summary>
+    /// OCRが1行を途中で2つの「行」に分けて返すことがある(小さい文字の「test@examp」と「le.com」など)。
+    /// 同じ高さに並び、すぐ右隣から始まる行はつなげて1行として扱う(行をまたいだメールアドレスも見つけるため)。
+    /// </summary>
+    internal static List<OcrLineBox> MergeSameRowLines(IEnumerable<OcrLineBox> lines)
+    {
+        var list = lines.Where(l => l.Words.Count > 0).ToList();
+        bool merged = true;
+        while (merged)
+        {
+            merged = false;
+            for (int i = 0; i < list.Count && !merged; i++)
+            {
+                var a = list[i].Words;
+                var last = a[^1].Box;
+                for (int j = 0; j < list.Count; j++)
+                {
+                    if (i == j) continue;
+                    var first = list[j].Words[0].Box;
+                    double h = Math.Max(1, Math.Max(last.Height, first.Height));
+                    double gap = first.X - last.Right;
+                    double overlap = Math.Min(last.Bottom, first.Bottom) - Math.Max(last.Y, first.Y);
+                    if (gap < -h * 0.3 || gap > h * 1.0) continue;
+                    if (overlap < Math.Min(last.Height, first.Height) * 0.5) continue;
+                    var words = new List<OcrWordBox>(a.Count + list[j].Words.Count);
+                    words.AddRange(a);
+                    words.AddRange(list[j].Words);
+                    list[i] = new OcrLineBox(words);
+                    list.RemoveAt(j);
+                    merged = true;
+                    break;
+                }
+            }
+        }
+        return list;
     }
 
     private void DetectInLine(OcrLineBox line, List<DetectionResult> results)

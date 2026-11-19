@@ -1,5 +1,6 @@
 using System.Linq;
 using StageMask.Core.Detection;
+using StageMask.Core.Geometry;
 using Xunit;
 using static StageMask.Core.Tests.TestHelpers;
 
@@ -73,6 +74,25 @@ public class DetectorEdgeCaseTests
         double right = d.Max(x => x.Box.Right);
         Assert.True(right >= line.Words[^1].Box.Right, "ドメインの後半(le.com)まで隠すこと");
         Assert.True(d.Min(x => x.Box.X) >= line.Words[1].Box.X, "前の単語(Contact:)は巻き込まないこと");
+    }
+
+    [Fact]
+    public void Email_SplitIntoTwoOcrLinesOnSameRow_MasksBothParts()
+    {
+        var a = new OcrLineBox(new[] { new OcrWordBox("Contact:", new RectD(0, 0, 80, 20)), new OcrWordBox("test@examp", new RectD(90, 0, 100, 20)) });
+        var b = new OcrLineBox(new[] { new OcrWordBox("le.com", new RectD(192, 1, 60, 20)) });
+        var d = Detect(b, a).Where(x => x.Category == DetectionCategory.Email).ToList();
+        Assert.NotEmpty(d);
+        Assert.True(d.Max(x => x.Box.Right) >= 252, "隣の行に分かれた後半(le.com)まで隠すこと");
+    }
+
+    [Fact]
+    public void Lines_OnDifferentRows_AreNotMerged()
+    {
+        var a = new OcrLineBox(new[] { new OcrWordBox("test@examp", new RectD(0, 0, 100, 20)) });
+        var b = new OcrLineBox(new[] { new OcrWordBox("le.com", new RectD(102, 40, 60, 20)) });
+        var d = Detect(a, b).Where(x => x.Category == DetectionCategory.Email).ToList();
+        Assert.True(d.Max(x => x.Box.Bottom) <= 20.5, "下の行は巻き込まないこと");
     }
 
     [Fact]
