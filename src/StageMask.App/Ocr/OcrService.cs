@@ -29,7 +29,7 @@ internal sealed class OcrService
     }
 
     /// <summary>この面積(ピクセル数)以下の画像は2倍に拡大してから読む。</summary>
-    internal const long UpscaleMaxPixels = 1_000_000;
+    internal const long UpscaleMaxPixels = 4_000_000;
 
     public bool IsAvailable => _engines.Count > 0;
 
@@ -63,7 +63,8 @@ internal sealed class OcrService
 
         // 小さい画像(変化した行だけの帯・小さいウィンドウ)は2倍にしてから読む。
         // 小さい文字だと読み落としや「test@examp le.com」のような単語の分割が起きやすいため。
-        // 大きい画像まで拡大するとOCRの時間が約4倍になるので、面積で上限を設ける
+        // 拡大するとOCRの時間が約4倍になるが、等倍だと全体を読み直すときにGUIDなどを読み落とすことが
+        // 実機で確認できたため、一般的なウィンドウの大きさ(400万ピクセル)までは拡大する
         double scale = 1;
         if ((long)frame.Width * frame.Height <= UpscaleMaxPixels)
         {

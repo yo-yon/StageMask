@@ -59,7 +59,8 @@ public sealed class SensitiveTextDetector
     // ---- 秘密情報(既知の形式) ----
     private static readonly Regex[] SecretRx =
     {
-        new(@"sk-(?:proj-|ant-[a-z0-9]+-)?[a-z0-9_\-]{20,}", Opt, RegexTimeout),            // OpenAI / Anthropic 形式のキー
+        // OpenAI / Anthropic 形式のキー。小さい文字では「proj」の「j」を「|」「]」などと読み違えることがあるため1文字は許容する
+        new(@"sk-(?:pro.-?|ant-[a-z0-9]+-)?[a-z0-9_\-]{20,}", Opt, RegexTimeout),
         new(@"gh[pousr]_[a-z0-9]{30,}", Opt, RegexTimeout),                               // GitHub トークン
         new(@"github_pat_[a-z0-9_]{30,}", Opt, RegexTimeout),                             // GitHub fine-grained PAT
         new(@"akia[0-9a-z]{16}", Opt, RegexTimeout),                                      // AWS アクセスキーID
@@ -71,7 +72,8 @@ public sealed class SensitiveTextDetector
         // キー=値 形式(接続文字列・設定ファイル)。値の部分まで含めてマスクする。
         new(@"(?:accountkey|sharedaccesskey|sharedaccesssignature|clientsecret|client_secret|client-secret|" +
             @"apikey|api_key|api-key|subscription-key|password|passwd|pwd|secret|token|sig)" +
-            @"[=:""']+[^;,&""'\s]{6,}", Opt, RegexTimeout),
+            // 区切りは「=」「:」。小さい文字ではOCRが「=」を「-」と読むことがあるため、値に数字を含む場合に限り「-」も許容する
+            @"\s?(?:[=:""']+|-(?=[^;,&""'\s]*\d))\s?[^;,&""'\s]{6,}", Opt, RegexTimeout),
         // Entra ID のクライアントシークレットでよく見られる形式(xxx8Q~...)。
         // ※公式に形式が規定されたものではなく、観察に基づくパターン。
         new(@"[a-z0-9_\-.]{3}\dq~[a-z0-9_.\-~]{31,}", Opt, RegexTimeout),
@@ -193,7 +195,7 @@ public sealed class SensitiveTextDetector
 
         if (_options.DetectSecret)
             foreach (var r in SecretRx)
-                AddRegexMatches(r, rx, rxMap, line, DetectionCategory.Secret, results);
+                AddRegexMatches(r, rx, rxMap, line, DetectionCategory.Secret, results, extendToAdjacent: true);
 
         if (_options.DetectSecret && _options.DetectGenericSecret)
             foreach (var w in line.Words)
@@ -219,14 +221,17 @@ public sealed class SensitiveTextDetector
     }
 
     private static void AddRegexMatches(Regex regex, string text, List<int> map, OcrLineBox line,
-                                        DetectionCategory category, List<DetectionResult> results)
+                                        DetectionCategory category, List<DetectionResult> results,
+                                        bool extendToAdjacent = false)
     {
         try
         {
             foreach (Match m in regex.Matches(text))
             {
                 if (m.Length == 0) continue;
-                results.Add(new DetectionResult(category, m.Value, BoxFor(m.Index, m.Length, map, line)));
+                var box = BoxFor(m.Index, m.Length, map, line);
+                if (extendToAdjacent) box = ExtendToAdjacentWords(box, m.Index, m.Length, map, line);
+                results.Add(new DetectionResult(category, m.Value, box));
             }
         }
         catch (RegexMatchTimeoutException)
@@ -332,6 +337,36 @@ public sealed class SensitiveTextDetector
         if (distinct.Count < 10) return false;
         if (allHex && w.Length >= 32) return true;
         return upper >= 2 && lower >= 2 && digit >= 2;
+    }
+
+    /// <summary>
+    /// キーやパスワードは、OCRが記号を読み違えると(「#」「|」など)一致する範囲が途中で切れ、残りが見えてしまう。
+    /// 一致した単語の左右に、空白をはさまず(文字の高さの35%以下の隙間で)くっついている単語を4つまで含める。
+    /// </summary>
+    private static RectD ExtendToAdjacentWords(RectD box, int start, int length, List<int> map, OcrLineBox line)
+    {
+        int first = -1, last = -1;
+        for (int i = start; i < start + length && i < map.Count; i++)
+        {
+            if (map[i] < 0) continue;
+            if (first < 0) first = map[i];
+            last = map[i];
+        }
+        if (first < 0) return box;
+        double h = Math.Max(1, line.Words.Max(w => w.Box.Height));
+        for (int k = 0; k < 4 && last + 1 < line.Words.Count; k++)
+        {
+            var a = line.Words[last].Box; var b = line.Words[last + 1].Box;
+            if (b.X - a.Right > h * 0.35) break;
+            box = box.Union(b); last++;
+        }
+        for (int k = 0; k < 4 && first - 1 >= 0; k++)
+        {
+            var a = line.Words[first - 1].Box; var b = line.Words[first].Box;
+            if (b.X - a.Right > h * 0.35) break;
+            box = box.Union(a); first--;
+        }
+        return box;
     }
 
     private static RectD BoxFor(int start, int length, List<int> map, OcrLineBox line)

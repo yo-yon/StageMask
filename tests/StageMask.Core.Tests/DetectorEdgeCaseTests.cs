@@ -110,6 +110,36 @@ public class DetectorEdgeCaseTests
         Assert.True(d.Max(x => x.Box.Right) >= 168);
     }
 
+    // v0.5.19: 小さい文字でのOCRの読み違えへの対策
+    [Theory]
+    [InlineData("db: Password-Dummy#Pass2026")]   // 「=」を「-」と読んだ
+    [InlineData("key: sk-pro|-AbCdEf1234567890GhIjKlMn")] // 「j」を「|」と読んだ
+    public void Secret_OcrMisreads_AreStillDetected(string text)
+    {
+        Assert.Contains(Detect(Line(text)), x => x.Category == DetectionCategory.Secret);
+    }
+
+    [Fact]
+    public void Secret_PasswordWordWithoutDigits_IsNotDetected()
+    {
+        Assert.DoesNotContain(Detect(Line("This is password-protected content")), x => x.Category == DetectionCategory.Secret);
+    }
+
+    [Fact]
+    public void Secret_ExtendsOverWordsTouchingWithoutSpace()
+    {
+        // 「sk-proj-…」の後ろの「#x」部分がOCRで別の単語になった
+        var line = new OcrLineBox(new[]
+        {
+            new OcrWordBox("key:", new RectD(0, 0, 40, 20)),
+            new OcrWordBox("sk-proj-AbCdEf1234567890GhIj", new RectD(50, 0, 280, 20)),
+            new OcrWordBox("#x", new RectD(331, 0, 20, 20)),
+        });
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Secret).ToList();
+        Assert.True(d.Max(x => x.Box.Right) >= 351);
+        Assert.True(d.Min(x => x.Box.X) >= 50, "空白で離れた「key:」は巻き込まない");
+    }
+
     [Fact]
     public void Lines_OnDifferentRows_AreNotMerged()
     {
