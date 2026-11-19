@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using StageMask.App.Capture;
 using StageMask.Core.Detection;
 using StageMask.Core.Geometry;
+using StageMask.Core.Imaging;
 using Windows.Globalization;
 using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
@@ -26,6 +27,9 @@ internal sealed class OcrService
         TryAdd("ja", "ja");
         if (useEnglish) TryAdd("en", "en-US");
     }
+
+    /// <summary>この面積(ピクセル数)以下の画像は2倍に拡大してから読む。</summary>
+    internal const long UpscaleMaxPixels = 1_000_000;
 
     public bool IsAvailable => _engines.Count > 0;
 
@@ -56,6 +60,18 @@ internal sealed class OcrService
     {
         var results = new List<IReadOnlyList<OcrLineBox>>();
         if (_engines.Count == 0 || frame.Width <= 0 || frame.Height <= 0) return results;
+
+        // 小さい画像(変化した行だけの帯・小さいウィンドウ)は2倍にしてから読む。
+        // 小さい文字だと読み落としや「test@examp le.com」のような単語の分割が起きやすいため。
+        // 大きい画像まで拡大するとOCRの時間が約4倍になるので、面積で上限を設ける
+        double scale = 1;
+        if ((long)frame.Width * frame.Height <= UpscaleMaxPixels)
+        {
+            var packed = frame.Stride == frame.Width * 4 ? frame.Pixels : frame.Crop(0, 0, frame.Width, frame.Height);
+            frame = new CapturedFrame(PixelUpscaler.Upscale2x(packed, frame.Width, frame.Height),
+                                      frame.Width * 2, frame.Height * 2, frame.Width * 8, frame.Origin);
+            scale = 2;
+        }
 
         // OCRエンジンの最大画像サイズを超える場合はタイルに分割する
         int max = (int)Math.Min(OcrEngine.MaxImageDimension, int.MaxValue);
@@ -88,7 +104,7 @@ internal sealed class OcrService
                         foreach (var word in line.Words)
                         {
                             var r = word.BoundingRect;
-                            words.Add(new OcrWordBox(word.Text, new RectD(r.X + tx, r.Y + ty, r.Width, r.Height)));
+                            words.Add(new OcrWordBox(word.Text, new RectD((r.X + tx) / scale, (r.Y + ty) / scale, r.Width / scale, r.Height / scale)));
                         }
                         lines.Add(new OcrLineBox(words));
                     }

@@ -34,9 +34,11 @@ public sealed class SensitiveTextDetector
     /// 入力途中のメールアドレス(「yoh@」「taro@exa」など)。完成するまで「メールアドレス」と判定されず、
     /// 入力中に見えてしまうため、「@ の前に文字があるもの」はドメインが未完成でも隠す。
     /// 「@メンション」(前に文字がない)は対象外。
+    /// 小さい文字ではOCRが「test@examp le.com」のようにドメインの途中で単語を分けることがあるため、
+    /// 直後の単語がドメインの続き(「.com」などで終わる)に見える場合はそこまで含める。
     /// </summary>
     private static readonly Regex PartialEmailRx = new(
-        @"[a-z0-9._%+\-]+@[a-z0-9.\-]*", Opt, RegexTimeout);
+        @"[a-z0-9._%+\-]+@[a-z0-9.\-]*(?: [a-z0-9\-]*(?:\.[a-z0-9\-]+)*\.[a-z]{2,}\b)?", Opt, RegexTimeout);
 
     private static readonly Regex[] IdentifierRx =
     {

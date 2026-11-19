@@ -63,6 +63,26 @@ public class DetectorEdgeCaseTests
         Assert.Contains(Detect(Line(text)), x => x.Category == DetectionCategory.Email);
     }
 
+    // v0.5.13: 小さい文字でOCRがドメインの途中で単語を分けた場合も、後ろまで隠す
+    [Fact]
+    public void Email_SplitInsideDomainByOcr_MasksBothParts()
+    {
+        var line = Line("Contact: test@examp le.com");
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Email).ToList();
+        Assert.NotEmpty(d);
+        double right = d.Max(x => x.Box.Right);
+        Assert.True(right >= line.Words[^1].Box.Right, "ドメインの後半(le.com)まで隠すこと");
+        Assert.True(d.Min(x => x.Box.X) >= line.Words[1].Box.X, "前の単語(Contact:)は巻き込まないこと");
+    }
+
+    [Fact]
+    public void Email_FollowedByOrdinaryWord_DoesNotSwallowIt()
+    {
+        var line = Line("taro@example.com is mine");
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Email).ToList();
+        Assert.True(d.Max(x => x.Box.Right) <= line.Words[0].Box.Right, "後ろの普通の単語は巻き込まないこと");
+    }
+
     [Fact]
     public void Email_TwoAddressesInOneLine_AreBothDetected()
     {
