@@ -73,38 +73,40 @@ internal sealed class WindowScanState
     public List<RectD> Pending = new();
     public double PendingFraction;
     public double LastMotionFraction;
-    /// <summary>動き続けている期間の始まり・最後に動いた時刻・最後にスクロール(上下のずれ)を見た時刻</summary>
-    public DateTime MotionStartUtc, LastMovingUtc, LastScrollUtc;
 
-    /// <summary>
-    /// 動画のように動き続けているか: 3秒以上動き続けていて、その間スクロール(上下のずれ)が見えないもの。
-    /// スクロールは短時間で止まるか、内容が上下にずれるので区別できる。
-    /// </summary>
-    public bool IsVideoLike(DateTime now) =>
-        (now - LastMovingUtc).TotalMilliseconds < 1000 &&
-        (now - MotionStartUtc).TotalMilliseconds >= 3000 &&
-        (now - LastScrollUtc).TotalMilliseconds >= 1500;
+    /// <summary>会議の映像・動画のように動き続けているか(判断の中身は VideoMotionTracker)</summary>
+    public readonly VideoMotionTracker Video = new();
+    public bool IsVideoLike(DateTime now) => Video.IsVideoLike(now);
+    /// <summary>映像のウィンドウで、一度隠したマスをしばらく隠したままにする(ちらつき防止)</summary>
+    private readonly StickyTiles _sticky = new();
+    public static readonly TimeSpan VideoPendingHold = TimeSpan.FromMilliseconds(1500);
     public DateTime LastMotionUtc;
 
     /// <summary>Verified と比べた未確認の範囲を更新する(Gate をロックした状態で呼ぶ)。</summary>
     /// <summary>時計・タイマーのような数字だけのマス(毎秒変わっても先に隠さない)</summary>
     public ClockTileMap? Clocks;
 
-    public void UpdatePending(FrameSignature sig, bool changeMask, bool ignoreClocks)
+    public void UpdatePending(FrameSignature sig, bool changeMask, bool ignoreClocks, bool videoLike = false)
     {
         if (!changeMask)
         {
             Pending = new List<RectD>();
             PendingFraction = 0;
+            _sticky.Clear();
             return;
         }
+        var now = DateTime.UtcNow;
         var changed = sig.ChangedTiles(Verified);
         // 時計・会議タイマーのように数字だけが変わる小さな変化は、先に隠さない(OCR は行う)
         if (ignoreClocks && Clocks is not null && Clocks.IsSameLayout(sig))
-            changed = Clocks.ExcludeClockTiles(changed, DateTime.UtcNow);
+            changed = Clocks.ExcludeClockTiles(changed, now);
         PendingFraction = sig.TileCount == 0 ? 0 : (double)changed.Count / sig.TileCount;
         // 隣のタイルまで広げて隠す(行の境目にまたがった文字・確認の合間に変わった部分の取りこぼしを防ぐ)
-        Pending = DetectionWorker.TilesToRects(sig, sig.Dilate(changed, 1));
+        var tiles = sig.Dilate(changed, 1);
+        // 映像のウィンドウでは、確認のたびにマスクが消えたり出たりしないよう、少しの間は隠したままにする
+        if (videoLike) tiles = _sticky.Apply(tiles, sig.Columns, sig.Rows, now, VideoPendingHold);
+        else _sticky.Clear();
+        Pending = DetectionWorker.TilesToRects(sig, tiles);
     }
 }
 
@@ -479,26 +481,22 @@ internal sealed class DetectionWorker : IDisposable
                 // 前回の確認から大きく変わった(スクロール・ページ切り替えなど)かどうか
                 if (state.LatestSig is { } prev && prev.IsSameLayout(sig) && sig.TileCount > 0)
                 {
-                    double motion = (double)sig.ChangedTiles(prev).Count / sig.TileCount;
+                    int changedCount = sig.ChangedTiles(prev).Count;
+                    double motion = (double)changedCount / sig.TileCount;
                     // 大きく変わった、または中くらいの変化が続いている(タッチパッドのゆっくりしたスクロールなど)
                     bool moving = motion >= cfg.LargeChangeFraction ||
                                   (motion >= ContinuousMotionFraction && state.LastMotionFraction >= ContinuousMotionFraction);
-                    if (moving)
-                    {
-                        state.LastMotionUtc = now;
-                        // 動き続けている時間を数える(1秒以上止まったら数え直す)
-                        if ((now - state.LastMovingUtc).TotalMilliseconds > 1000) state.MotionStartUtc = now;
-                        state.LastMovingUtc = now;
-                        // 内容が上下にずれていればスクロール(動画ではない)
-                        if (sig.EstimateVerticalShift(prev) is not null) state.LastScrollUtc = now;
-                    }
+                    if (moving) state.LastMotionUtc = now;
+                    // 内容が上下にずれていればスクロール(動画ではない)
+                    bool scrolled = moving && sig.EstimateVerticalShift(prev) is not null;
+                    state.Video.Observe(now, changedCount, scrolled);
                     state.LastMotionFraction = motion;
                 }
                 state.LatestFrame = frame;
                 state.LatestSig = sig;
                 state.LatestUtc = now;
                 state.Geometry = new FrameGeometry(frame.Origin, frame.Width, frame.Height);
-                state.UpdatePending(sig, cfg.ChangeMask, cfg.IgnoreClocks);
+                state.UpdatePending(sig, cfg.ChangeMask, cfg.IgnoreClocks, cfg.VideoTileMask && state.IsVideoLike(now));
                 // 内容が変わっていない場所の検出結果は、まだ有効なので期限を延ばす
                 // (延ばさないと、OCRの順番待ちの間に期限切れになり、変わっていない機密情報が見えてしまう)
                 if (cfg.ChangeMask) _hold.ExtendOutside(id, state.Pending, now, holdUnchanged);
@@ -695,7 +693,7 @@ internal sealed class DetectionWorker : IDisposable
                         if (state.Clocks is null || !state.Clocks.IsSameLayout(sig)) state.Clocks = new ClockTileMap(sig);
                         state.Clocks.Update(dirty, words, items.Select(i => i.Item1), now);
                     }
-                    if (state.LatestSig is not null) state.UpdatePending(state.LatestSig, cfg.ChangeMask, cfg.IgnoreClocks);
+                    if (state.LatestSig is not null) state.UpdatePending(state.LatestSig, cfg.ChangeMask, cfg.IgnoreClocks, cfg.VideoTileMask && state.IsVideoLike(DateTime.UtcNow));
                 }
                 _scanStatus.RecordSuccess(id, now);
             }

@@ -415,7 +415,7 @@ internal sealed class MaskController : IDisposable
                         AddClipped(visuals, new MaskVisual(w.FrameRect.Inflate(WindowMaskPaddingPx), MaskKind.Window, MaskStyle.Solid, null,
                                                    Text: c.Text, ContentImage: _contentImages.Get(c.ImagePath)), occluders);
                         failClosed++;
-                        failReason ??= $"{w.ProcessName}: {_scanStatus.GetFailureReason(id) ?? "検査待ち"}";
+                        failReason ??= $"{w.ProcessName}({w.ClassName} {w.FrameRect.Width:0}x{w.FrameRect.Height:0} @{w.FrameRect.X:0},{w.FrameRect.Y:0}): {_scanStatus.GetFailureReason(id) ?? "検査待ち"}";
                     }
                     else if (hide is null) // 全体を隠しているウィンドウには重ねて描く必要がない
                     {
