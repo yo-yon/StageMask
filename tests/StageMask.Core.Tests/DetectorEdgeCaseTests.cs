@@ -183,6 +183,15 @@ public class DetectorEdgeCaseTests
         Assert.True(d.Min(x => x.Box.X) > 72, "空白で離れた「05」は巻き込まない");
     }
 
+    [Theory]
+    [InlineData("host: contoso.onmicrosott.com")]   // 小さい「f」を「t」と読んだ
+    [InlineData("host: contoso.onmicros0ft.com")]
+    [InlineData("host: contoso.sharepoirit.com")]   // 「n」を「ri」と読んだ
+    public void Identifier_TenantHostWithOcrMisreads_IsDetected(string text)
+    {
+        Assert.Contains(Detect(Line(text)), x => x.Category == DetectionCategory.Identifier);
+    }
+
     [Fact]
     public void Lines_OnDifferentRows_AreNotMerged()
     {

@@ -58,9 +58,21 @@ public sealed class SensitiveTextDetector
         new(@"[a-z0-9\-]+\.azurewebsites\.net", Opt, RegexTimeout),
     };
 
-    /// <summary>固定の文字列を、文字の間に空白が1つ入っていても一致する正規表現にする。</summary>
+    /// <summary>
+    /// 固定の文字列を、OCRの読み違えに強い正規表現にする。
+    /// 文字の間に空白が1つ入っていても一致させ、小さい文字で取り違えやすい文字(f と t、o と 0、
+    /// l・i・1・| など)はどちらでも一致させる(例: 小さい「onmicrosoft」は「onmicrosott」と読まれることがある)。
+    /// </summary>
     private static string Spaced(string literal)
-        => string.Join(" ?", literal.Select(c => Regex.Escape(c.ToString())));
+        => string.Join(" ?", literal.Select(c => c switch
+        {
+            'f' or 't' => "[ft]",
+            'o' => "[o0]",
+            'l' or 'i' => "[li1|!]",
+            'n' => "(?:n|ri)",
+            'm' => "(?:m|rn)",
+            _ => Regex.Escape(c.ToString()),
+        }));
 
     // ---- 秘密情報(既知の形式) ----
     private static readonly Regex[] SecretRx =
