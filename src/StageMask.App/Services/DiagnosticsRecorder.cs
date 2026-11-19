@@ -99,6 +99,8 @@ internal sealed class DiagnosticsRecorder
             Events = string.Join(" / ", events),
             OccludedMasks = c.OccludedMaskCount,
             OccluderApps = c.OccluderApps,
+            FailClosedReason = c.FailClosedCount > 0 ? c.FailClosedReason ?? "" : "",
+            PendingApps = c.PendingApps,
         };
 
         try

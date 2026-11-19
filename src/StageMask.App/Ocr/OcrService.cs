@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
@@ -66,26 +67,33 @@ internal sealed class OcrService
         // 拡大するとOCRの時間が約4倍になるが、等倍だと全体を読み直すときにGUIDなどを読み落とすことが
         // 実機で確認できたため、一般的なウィンドウの大きさ(400万ピクセル)までは拡大する
         double scale = 1;
-        if ((long)frame.Width * frame.Height <= UpscaleMaxPixels)
+        // 大きな配列は ArrayPool から借りて使い回す(4K のウィンドウを2倍にすると1枚で数十MBになり、
+        // 毎回作るとメモリ使用量が大きく増えるため)
+        byte[]? upscaled = null;
+        var tileBuffers = new List<byte[]>();
+        try
         {
-            var packed = frame.Stride == frame.Width * 4 ? frame.Pixels : frame.Crop(0, 0, frame.Width, frame.Height);
-            frame = new CapturedFrame(PixelUpscaler.Upscale2x(packed, frame.Width, frame.Height),
-                                      frame.Width * 2, frame.Height * 2, frame.Width * 8, frame.Origin);
-            scale = 2;
-        }
+            if ((long)frame.Width * frame.Height <= UpscaleMaxPixels)
+            {
+                var packed = frame.Stride == frame.Width * 4 ? frame.Pixels : frame.Crop(0, 0, frame.Width, frame.Height);
+                upscaled = ArrayPool<byte>.Shared.Rent(frame.Width * 2 * frame.Height * 2 * 4);
+                PixelUpscaler.Upscale2x(packed, frame.Width, frame.Height, upscaled);
+                frame = new CapturedFrame(upscaled, frame.Width * 2, frame.Height * 2, frame.Width * 8, frame.Origin);
+                scale = 2;
+            }
 
-        // OCRエンジンの最大画像サイズを超える場合はタイルに分割する
-        int max = (int)Math.Min(OcrEngine.MaxImageDimension, int.MaxValue);
-        if (max <= 0) max = 4096;
+            // OCRエンジンの最大画像サイズを超える場合はタイルに分割する
+            int max = (int)Math.Min(OcrEngine.MaxImageDimension, int.MaxValue);
+            if (max <= 0) max = 4096;
 
-        // 分割するときは境目を重ねる(境目で文字列が切れて、メールアドレスなどを読み落とさないように)。
-        // 重なった部分で同じ文字列が2回見つかることがあるが、マスクが重なるだけで問題はない
-        int overlap = Math.Min(256, max / 4);
-        int stepSize = max - overlap;
+            // 分割するときは境目を重ねる(境目で文字列が切れて、メールアドレスなどを読み落とさないように)。
+            // 重なった部分で同じ文字列が2回見つかることがあるが、マスクが重なるだけで問題はない
+            int overlap = Math.Min(256, max / 4);
+            int stepSize = max - overlap;
 
-        foreach (var (_, engine) in _engines)
-        {
-            var lines = new List<OcrLineBox>();
+            var perEngine = new List<OcrLineBox>[_engines.Count];
+            for (int e = 0; e < perEngine.Length; e++) perEngine[e] = new List<OcrLineBox>();
+
             for (int ty = 0; ty < frame.Height; ty += stepSize)
             {
                 for (int tx = 0; tx < frame.Width; tx += stepSize)
@@ -93,27 +101,46 @@ internal sealed class OcrService
                     ct.ThrowIfCancellationRequested();
                     int w = Math.Min(max, frame.Width - tx);
                     int h = Math.Min(max, frame.Height - ty);
-                    var pixels = frame.Crop(tx, ty, w, h);
 
-                    using var bitmap = SoftwareBitmap.CreateCopyFromBuffer(
-                        pixels.AsBuffer(), BitmapPixelFormat.Bgra8, w, h, BitmapAlphaMode.Premultiplied);
-                    var result = await engine.RecognizeAsync(bitmap);
-
-                    foreach (var line in result.Lines)
+                    // 画像全体がそのまま1枚に収まるときは切り出さない
+                    byte[] pixels;
+                    if (tx == 0 && ty == 0 && w == frame.Width && h == frame.Height && frame.Stride == w * 4)
+                        pixels = frame.Pixels;
+                    else
                     {
-                        var words = new List<OcrWordBox>(line.Words.Count);
-                        foreach (var word in line.Words)
+                        pixels = ArrayPool<byte>.Shared.Rent(w * h * 4);
+                        tileBuffers.Add(pixels);
+                        for (int row = 0; row < h; row++)
+                            Buffer.BlockCopy(frame.Pixels, (ty + row) * frame.Stride + tx * 4, pixels, row * w * 4, w * 4);
+                    }
+
+                    // 1枚の画像を、すべてのエンジン(日本語・英語)で使い回す
+                    using var bitmap = SoftwareBitmap.CreateCopyFromBuffer(
+                        pixels.AsBuffer(0, w * h * 4), BitmapPixelFormat.Bgra8, w, h, BitmapAlphaMode.Premultiplied);
+                    for (int e = 0; e < _engines.Count; e++)
+                    {
+                        var result = await _engines[e].Engine.RecognizeAsync(bitmap);
+                        foreach (var line in result.Lines)
                         {
-                            var r = word.BoundingRect;
-                            words.Add(new OcrWordBox(word.Text, new RectD((r.X + tx) / scale, (r.Y + ty) / scale, r.Width / scale, r.Height / scale)));
+                            var words = new List<OcrWordBox>(line.Words.Count);
+                            foreach (var word in line.Words)
+                            {
+                                var r = word.BoundingRect;
+                                words.Add(new OcrWordBox(word.Text, new RectD((r.X + tx) / scale, (r.Y + ty) / scale, r.Width / scale, r.Height / scale)));
+                            }
+                            perEngine[e].Add(new OcrLineBox(words));
                         }
-                        lines.Add(new OcrLineBox(words));
                     }
                     if (tx + w >= frame.Width) break;
                 }
                 if (ty + max >= frame.Height) break;
             }
-            results.Add(lines);
+            results.AddRange(perEngine);
+        }
+        finally
+        {
+            if (upscaled is not null) ArrayPool<byte>.Shared.Return(upscaled);
+            foreach (var b in tileBuffers) ArrayPool<byte>.Shared.Return(b);
         }
         return results;
     }

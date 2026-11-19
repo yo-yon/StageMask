@@ -307,6 +307,7 @@ internal sealed class MaskController : IDisposable
         }
 
         var visuals = new List<MaskVisual>();
+        var pendingByApp = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         _occludedMasks = 0;
         _occluderApps.Clear();
         var targets = new Dictionary<IntPtr, WorkTarget>();
@@ -440,6 +441,7 @@ internal sealed class MaskController : IDisposable
                                 if (screen.IsEmpty) continue;
                                 AddClipped(visuals, new MaskVisual(screen, MaskKind.Detection, MaskStyle.Solid, null), occluders);
                                 pendingMasks++;
+                                pendingByApp[w.ProcessName] = pendingByApp.GetValueOrDefault(w.ProcessName) + 1;
                             }
                         }
                     }
@@ -484,6 +486,7 @@ internal sealed class MaskController : IDisposable
         ScrollMaskCount = scrollMasks;
         VideoWindowCount = videoWindows;
         OccludedMaskCount = _occludedMasks;
+        PendingApps = string.Join(" ", pendingByApp.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase).Select(p => $"{p.Key}:{p.Value}"));
         OccluderApps = string.Join(" ", _occluderApps.OrderBy(a => a, StringComparer.OrdinalIgnoreCase));
         foreach (var kv in _wheelUntil)
             if (kv.Value <= now) _wheelUntil.TryRemove(kv.Key, out _);
@@ -551,6 +554,8 @@ internal sealed class MaskController : IDisposable
     private int _occludedMasks;
     private readonly HashSet<string> _occluderApps = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>未確認の部分を先に隠しているマスクの数を、アプリ名ごとに(例: "ms-teams:12")</summary>
+    public string PendingApps { get; private set; } = "";
     /// <summary>手前のウィンドウに重なったため省いた・切り抜いたマスクの数(直近の描画時点)</summary>
     public int OccludedMaskCount { get; private set; }
     /// <summary>そのとき手前にあったウィンドウのアプリ名(プロセス名、空白区切り)</summary>

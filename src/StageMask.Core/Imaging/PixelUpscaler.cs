@@ -14,12 +14,25 @@ public static class PixelUpscaler
     /// </summary>
     public static byte[] Upscale2x(byte[] src, int width, int height)
     {
-        ArgumentNullException.ThrowIfNull(src);
         if (width <= 0 || height <= 0) return Array.Empty<byte>();
+        var dst = new byte[width * 2 * height * 2 * 4];
+        Upscale2x(src, width, height, dst);
+        return dst;
+    }
+
+    /// <summary>
+    /// 出力先を渡す版(呼び出し側で配列を使い回し、大きな配列を毎回作らないようにするため)。
+    /// dst は (幅×2)×(高さ×2)×4 バイト以上。
+    /// </summary>
+    public static void Upscale2x(byte[] src, int width, int height, byte[] dst)
+    {
+        ArgumentNullException.ThrowIfNull(src);
+        ArgumentNullException.ThrowIfNull(dst);
+        if (width <= 0 || height <= 0) return;
         if (src.Length < width * height * 4) throw new ArgumentException("画像のサイズが合いません", nameof(src));
 
         int dw = width * 2, dh = height * 2;
-        var dst = new byte[dw * dh * 4];
+        if (dst.Length < dw * dh * 4) throw new ArgumentException("出力先が小さすぎます", nameof(dst));
         for (int y = 0; y < dh; y++)
         {
             // 出力画素の中心を元画像の座標に戻す: (y + 0.5) / 2 - 0.5
@@ -45,6 +58,5 @@ public static class PixelUpscaler
                 }
             }
         }
-        return dst;
     }
 }

@@ -72,9 +72,12 @@ public sealed class ClockTileMap
         var sensitive = new HashSet<int>();
         foreach (var d in detections)
             foreach (var i in TilesOf(d)) sensitive.Add(i);
-        bool small = dirty.Count <= SmallChangeTiles;
+        // 「小さな変化」かどうかは、つながっている変化のかたまりごとに判断する
+        // (会議では映像の部分も変わり続けるため、ウィンドウ全体の変化の数で判断するとタイマーが対象にならない)
+        var cluster = ClusterSizes(dirty);
         foreach (var i in dirty)
         {
+            bool small = cluster[i] <= SmallChangeTiles;
             if (!small || sensitive.Contains(i)) { _tickCount[i] = 0; _lastTick[i] = now; continue; }
             _tickCount[i] = (now - _lastTick[i]).TotalSeconds <= TickWindowSeconds ? _tickCount[i] + 1 : 1;
             _lastTick[i] = now;
@@ -113,11 +116,51 @@ public sealed class ClockTileMap
     /// </summary>
     public List<(int Column, int Row)> ExcludeClockTiles(List<(int Column, int Row)> changed, DateTime now, int maxTiles = SmallChangeTiles)
     {
-        if (changed.Count > maxTiles) return changed;
+        // 変化のかたまりごとに判断する: 大きなかたまり(スクロール・映像・画面切り替え)の中のマスは除かない
+        var indices = new HashSet<int>();
+        foreach (var (c, r) in changed)
+            if (c >= 0 && r >= 0 && c < _columns && r < _rows) indices.Add(r * _columns + c);
+        var cluster = ClusterSizes(indices);
         var result = new List<(int, int)>(changed.Count);
         foreach (var t in changed)
-            if (!IsClock(t.Column, t.Row) && !IsTicker(t.Column, t.Row, now)) result.Add(t);
+        {
+            int i = t.Row * _columns + t.Column;
+            bool small = cluster.TryGetValue(i, out var size) && size <= maxTiles;
+            if (small && (IsClock(t.Column, t.Row) || IsTicker(t.Column, t.Row, now))) continue;
+            result.Add(t);
+        }
         return result;
+    }
+
+    /// <summary>変化したマスを、上下左右・斜めにつながったかたまりに分け、各マスが属するかたまりの大きさを返す。</summary>
+    private Dictionary<int, int> ClusterSizes(HashSet<int> tiles)
+    {
+        var size = new Dictionary<int, int>(tiles.Count);
+        var seen = new HashSet<int>();
+        var stack = new Stack<int>();
+        var members = new List<int>();
+        foreach (var start in tiles)
+        {
+            if (!seen.Add(start)) continue;
+            members.Clear();
+            stack.Push(start);
+            while (stack.Count > 0)
+            {
+                int i = stack.Pop();
+                members.Add(i);
+                int c = i % _columns, r = i / _columns;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int nc = c + dx, nr = r + dy;
+                        if (nc < 0 || nr < 0 || nc >= _columns || nr >= _rows) continue;
+                        int n = nr * _columns + nc;
+                        if (tiles.Contains(n) && seen.Add(n)) stack.Push(n);
+                    }
+            }
+            foreach (var m in members) size[m] = members.Count;
+        }
+        return size;
     }
 
     private IEnumerable<int> TilesOf(RectD r)

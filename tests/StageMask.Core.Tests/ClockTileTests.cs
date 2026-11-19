@@ -165,4 +165,21 @@ public class ShiftEstimateTests
             map.Update(all, System.Array.Empty<OcrWordBox>(), System.Array.Empty<RectD>(), t0.AddSeconds(k));
         Assert.False(map.IsTicker(1, 1, t0.AddSeconds(3)));
     }
+
+    [Fact]
+    public void TimerTile_IsTickerEvenWhileVideoAreaChanges()
+    {
+        // 12x4 タイル。左端の1マス(タイマー)と、右側の大きなかたまり(映像)が同時に変わり続ける
+        var map = new ClockTileMap(FrameSignature.Compute(new byte[576 * 192 * 4], 576, 192, 576 * 4));
+        var t0 = new System.DateTime(2026, 11, 19, 12, 0, 0, System.DateTimeKind.Utc);
+        var changed = new List<(int, int)> { (0, 0) };
+        for (int r = 0; r < 4; r++) for (int c = 4; c < 12; c++) changed.Add((c, r)); // 32マスの映像
+        for (int k = 0; k < 3; k++)
+            map.Update(changed, System.Array.Empty<OcrWordBox>(), System.Array.Empty<RectD>(), t0.AddSeconds(k));
+        Assert.True(map.IsTicker(0, 0, t0.AddSeconds(2.5))); // タイマーは小さなかたまりなので対象
+        Assert.False(map.IsTicker(5, 1, t0.AddSeconds(2.5))); // 映像の部分は大きなかたまりなので対象外
+        var result = map.ExcludeClockTiles(changed, t0.AddSeconds(2.5));
+        Assert.False(result.Contains((0, 0)));
+        Assert.Equal(32, result.Count);
+    }
 }
