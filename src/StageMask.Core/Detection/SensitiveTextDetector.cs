@@ -97,6 +97,14 @@ public sealed class SensitiveTextDetector
         new(@"[a-z0-9_\-.]{3}\dq~[a-z0-9_.\-~]{31,}", Opt, RegexTimeout),
     };
 
+    /// <summary>
+    /// キーの書き出し(「sk-」「ghp_」など)だけでも秘密情報とみなす。
+    /// 小さい文字ではOCRがキーを途中で分けたり読み違えたりして本体が形式に合わなくなることがあるため、
+    /// 書き出しを見つけたら、そこから続く断片(空白をはさんでいても)をまとめて隠す。
+    /// </summary>
+    private static readonly Regex SecretPrefixRx = new(
+        @"\b(?:sk-[a-z0-9]|gh[pousr]_|github_pat_|xox[abprs]-|akia[0-9a-z]{4}|aiza[0-9a-z_\-]{4})", Opt, RegexTimeout);
+
     // 汎用の「長くてランダムな文字列」(単語単位で判定する)
     private static readonly Regex GenericTokenRx = new(@"^[A-Za-z0-9+/_\-~=.]{28,}$", RegexOptions.CultureInvariant | RegexOptions.Compiled, RegexTimeout);
 
@@ -212,15 +220,18 @@ public sealed class SensitiveTextDetector
                 AddRegexMatches(r, rx, rxMap, line, DetectionCategory.Identifier, results, extendToAdjacent: true);
 
         if (_options.DetectSecret)
+        {
             foreach (var r in SecretRx)
-                AddRegexMatches(r, rx, rxMap, line, DetectionCategory.Secret, results, extendToAdjacent: true);
+                AddRegexMatches(r, rx, rxMap, line, DetectionCategory.Secret, results, extendToAdjacent: true, secret: true);
+            AddRegexMatches(SecretPrefixRx, rx, rxMap, line, DetectionCategory.Secret, results, extendToAdjacent: true, secret: true);
+        }
 
         if (_options.DetectSecret && _options.DetectGenericSecret)
             for (int wi = 0; wi < line.Words.Count; wi++)
             {
                 var w = line.Words[wi];
                 if (LooksLikeRandomToken(w.Text))
-                    results.Add(new DetectionResult(DetectionCategory.Secret, w.Text, ExtendWordRange(w.Box, wi, wi, line)));
+                    results.Add(new DetectionResult(DetectionCategory.Secret, w.Text, ExtendWordRange(w.Box, wi, wi, line, secret: true)));
             }
 
         if (_options.DetectNgWords && _ngWords.Count > 0)
@@ -243,7 +254,7 @@ public sealed class SensitiveTextDetector
 
     private static void AddRegexMatches(Regex regex, string text, List<int> map, OcrLineBox line,
                                         DetectionCategory category, List<DetectionResult> results,
-                                        bool extendToAdjacent = false, bool keyFragments = true)
+                                        bool extendToAdjacent = false, bool keyFragments = true, bool secret = false)
     {
         try
         {
@@ -251,7 +262,7 @@ public sealed class SensitiveTextDetector
             {
                 if (m.Length == 0) continue;
                 var box = BoxFor(m.Index, m.Length, map, line);
-                if (extendToAdjacent) box = ExtendToAdjacentWords(box, m.Index, m.Length, map, line, keyFragments);
+                if (extendToAdjacent) box = ExtendToAdjacentWords(box, m.Index, m.Length, map, line, keyFragments, secret);
                 results.Add(new DetectionResult(category, m.Value, box));
             }
         }
@@ -404,7 +415,7 @@ public sealed class SensitiveTextDetector
     /// キーやパスワードは、OCRが記号を読み違えると(「#」「|」など)一致する範囲が途中で切れ、残りが見えてしまう。
     /// 一致した単語の左右に、空白をはさまずくっついている単語(とキーの断片に見える単語)を4つまで含める。
     /// </summary>
-    private static RectD ExtendToAdjacentWords(RectD box, int start, int length, List<int> map, OcrLineBox line, bool keyFragments = true)
+    private static RectD ExtendToAdjacentWords(RectD box, int start, int length, List<int> map, OcrLineBox line, bool keyFragments = true, bool secret = false)
     {
         int first = -1, last = -1;
         for (int i = start; i < start + length && i < map.Count; i++)
@@ -414,16 +425,31 @@ public sealed class SensitiveTextDetector
             last = map[i];
         }
         if (first < 0) return box;
-        return ExtendWordRange(box, first, last, line, keyFragments);
+        return ExtendWordRange(box, first, last, line, keyFragments, secret);
     }
 
     /// <param name="keyFragments">
     /// true: 空白をはさんでいても、キーの一部に見える断片(数字・記号入りなど)は文字の高さ1.2倍までの隙間なら含める。
     /// false: 空白をはさまずくっついている単語だけ含める(メールアドレス用)。
     /// </param>
-    private static RectD ExtendWordRange(RectD box, int first, int last, OcrLineBox line, bool keyFragments = true)
+    /// <param name="secret">
+    /// true(キー・パスワード): 後ろ側は、ふつうの単語(英小文字だけ・先頭だけ大文字)が出てくるまで、
+    /// 文字の高さ3倍までの隙間なら断片を6つまで含める(OCRがキーを細かく分けて隙間を大きく読んでも、残りが見えないように)。
+    /// </param>
+    private static RectD ExtendWordRange(RectD box, int first, int last, OcrLineBox line, bool keyFragments = true, bool secret = false)
     {
         double h = Math.Max(1, line.Words.Max(w => w.Box.Height));
+        if (secret)
+        {
+            for (int k = 0; k < 6 && last + 1 < line.Words.Count; k++)
+            {
+                var a = line.Words[last].Box; var b = line.Words[last + 1];
+                double gap = b.Box.X - a.Right;
+                bool touching = gap <= h * 0.2;
+                if (!IsAsciiWord(b.Text) || gap > h * 3.0 || (!touching && LooksPlainWord(b.Text))) break;
+                box = box.Union(b.Box); last++;
+            }
+        }
         // 「空白なし」の基準は HasSpaceBetween と同じ(文字の高さの20%以下の隙間)。メールアドレスはより厳しくする
         double touch = keyFragments ? 0.2 : 0.12;
         // 日本語OCRは1文字ずつ単語に分けるため、日本語の文字(「メールは」「です」)は含めない
@@ -486,6 +512,15 @@ public sealed class SensitiveTextDetector
             else if (c is '-' or '_' or '#' or '+' or '/' or '~' or '|' or '=') symbol = true;
         }
         return digit || (upper && lower && word.Length >= 4 && !IsCapitalizedWord(word)) || symbol;
+    }
+
+    /// <summary>ふつうの英単語に見えるか(英小文字だけ、または先頭だけ大文字)。キーの断片とは見なさない。</summary>
+    private static bool LooksPlainWord(string? w)
+    {
+        if (string.IsNullOrEmpty(w)) return true;
+        if (IsCapitalizedWord(w)) return true;
+        foreach (var c in w) if (c is < 'a' or > 'z') return false;
+        return true;
     }
 
     private static bool IsAsciiWord(string? w)

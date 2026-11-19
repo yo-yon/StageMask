@@ -233,6 +233,36 @@ public class DetectorEdgeCaseTests
         Assert.True(d.Min(x => x.Box.X) >= 40);
     }
 
+    // v0.5.26: キーが細かく分かれ、隙間も大きく読まれた場合
+    [Fact]
+    public void Secret_KeySplitWithWideGaps_MasksPrefixAndTail()
+    {
+        var line = new OcrLineBox(new[]
+        {
+            new OcrWordBox("key:", new RectD(0, 0, 40, 20)),
+            new OcrWordBox("sk-p", new RectD(52, 0, 40, 20)),
+            new OcrWordBox("roj-AbCdEf12", new RectD(118, 0, 120, 20)),   // 隙間 26px(1.3文字の高さ)
+            new OcrWordBox("34567890GhIjKlMnOpQr", new RectD(262, 0, 200, 20)),
+            new OcrWordBox("-StUv#x", new RectD(510, 0, 70, 20)),         // 隙間 48px(2.4文字の高さ)
+            new OcrWordBox("is", new RectD(600, 0, 20, 20)),
+            new OcrWordBox("valid", new RectD(632, 0, 50, 20)),
+        });
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Secret).ToList();
+        Assert.NotEmpty(d);
+        Assert.True(d.Min(x => x.Box.X) <= 52, "書き出しの「sk-p」も隠す");
+        Assert.True(d.Max(x => x.Box.Right) >= 580, "末尾の「-StUv#x」も隠す");
+        Assert.True(d.Min(x => x.Box.X) > 40, "ラベルの「key:」は巻き込まない");
+        Assert.True(d.Max(x => x.Box.Right) < 600, "後ろのふつうの単語は巻き込まない");
+    }
+
+    [Theory]
+    [InlineData("desk-top layout")]
+    [InlineData("task-1 done")]
+    public void SecretPrefix_InsideOrdinaryWords_IsNotDetected(string text)
+    {
+        Assert.DoesNotContain(Detect(Line(text)), x => x.Category == DetectionCategory.Secret);
+    }
+
     [Fact]
     public void Lines_OnDifferentRows_AreNotMerged()
     {
