@@ -192,6 +192,47 @@ public class DetectorEdgeCaseTests
         Assert.Contains(Detect(Line(text)), x => x.Category == DetectionCategory.Identifier);
     }
 
+    // v0.5.24: 前側が空白ほどの隙間で分かれた場合(案A)
+    [Fact]
+    public void Email_LocalPartSplitWithSpaceLikeGap_MasksShortFragment()
+    {
+        // 「mai」と「l5@example.com」の間に文字1つ弱の隙間(文字幅10px、隙間8px)
+        var line = new OcrLineBox(new[]
+        {
+            new OcrWordBox("line", new RectD(0, 0, 40, 20)),
+            new OcrWordBox("05", new RectD(60, 0, 20, 20)),
+            new OcrWordBox("mai", new RectD(100, 0, 30, 20)),
+            new OcrWordBox("l5@example.com", new RectD(138, 0, 140, 20)),
+        });
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Email).ToList();
+        Assert.True(d.Min(x => x.Box.X) <= 100, "前の「mai」も隠す");
+        Assert.True(d.Min(x => x.Box.X) > 80, "その前の「05」までは隠さない");
+    }
+
+    [Fact]
+    public void Email_LabelBeforeAddress_IsNotMasked()
+    {
+        var line = new OcrLineBox(new[]
+        {
+            new OcrWordBox("Mail:", new RectD(0, 0, 50, 20)),
+            new OcrWordBox("yoh@example.com", new RectD(58, 0, 150, 20)),
+        });
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Email).ToList();
+        Assert.True(d.Min(x => x.Box.X) >= 58, "記号で終わるラベルは巻き込まない");
+    }
+
+    [Fact]
+    public void Email_FarPrecedingWord_IsNotMasked()
+    {
+        var line = new OcrLineBox(new[]
+        {
+            new OcrWordBox("to", new RectD(0, 0, 20, 20)),
+            new OcrWordBox("yoh@example.com", new RectD(40, 0, 150, 20)), // 文字幅10px、隙間20px(2文字分)
+        });
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Email).ToList();
+        Assert.True(d.Min(x => x.Box.X) >= 40);
+    }
+
     [Fact]
     public void Lines_OnDifferentRows_AreNotMerged()
     {

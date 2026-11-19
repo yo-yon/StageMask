@@ -442,7 +442,29 @@ public sealed class SensitiveTextDetector
             if (!Joinable(b.X - a.Box.Right, a.Text)) break;
             box = box.Union(a.Box); first--;
         }
+        // メールアドレスは、前側(ローカル部)が OCR で空白ほどの隙間をあけて別の単語に分かれることがある
+        // (小さい文字の「mail5@…」が「mai」「l5@…」になる)。直前の単語が短い英数字の断片なら含める
+        if (!keyFragments && first - 1 >= 0 && LooksLocalPartFragment(line.Words[first - 1], line.Words[first]))
+            box = box.Union(line.Words[first - 1].Box);
         return box;
+    }
+
+    /// <summary>
+    /// メールアドレスの直前の単語が、ローカル部の切れ端に見えるか。
+    /// 小文字・数字だけの4文字以下で、文字1つ分ほどの隙間で並んでいるもの。
+    /// 「Contact:」「宛先:」のようなラベルは含めない。「to」「cc」などの短い単語まで隠すことがあるが、隠しすぎる側に倒す。
+    /// </summary>
+    private static bool LooksLocalPartFragment(OcrWordBox prev, OcrWordBox addressWord)
+    {
+        var t = prev.Text;
+        if (string.IsNullOrEmpty(t) || t.Length > 4) return false;
+        // 小文字と数字だけ(「Taro」「CC」のような大文字を含む名前・略語は、ふつうの単語とみなして含めない)
+        foreach (var c in t) if (!(c is >= 'a' and <= 'z' or >= '0' and <= '9')) return false;
+        var text = addressWord.Text ?? "";
+        if (text.Length == 0) return false;
+        double charWidth = addressWord.Box.Width / text.Length;
+        double gap = addressWord.Box.X - prev.Box.Right;
+        return gap >= -charWidth && gap <= charWidth * 1.0;
     }
 
     /// <summary>
