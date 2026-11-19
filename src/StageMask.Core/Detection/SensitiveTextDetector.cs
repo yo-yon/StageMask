@@ -47,14 +47,20 @@ public sealed class SensitiveTextDetector
         // ハイフンなしの32桁16進数(GUIDのN形式など)
         new(@"(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])", Opt, RegexTimeout),
         // Microsoft 365 / Power Platform / Azure のテナント固有ホスト名
-        new(@"[a-z0-9\-]+\.onmicrosoft\.com", Opt, RegexTimeout),
-        new(@"[a-z0-9\-]+\.sharepoint\.com", Opt, RegexTimeout),
+        // 小さい文字ではOCRが「sharepo int.com」のように単語の途中で分けることがあるため、
+        // ドメイン名の文字の間に区切り(空白)が1つずつ入っていても一致させる
+        new(@"[a-z0-9\-]+\." + Spaced("onmicrosoft.com"), Opt, RegexTimeout),
+        new(@"[a-z0-9\-]+\." + Spaced("sharepoint.com"), Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.crm\d*\.dynamics\.com", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.(?:blob|queue|table|file|dfs)\.core\.windows\.net", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.vault\.azure\.net", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.openai\.azure\.com", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.azurewebsites\.net", Opt, RegexTimeout),
     };
+
+    /// <summary>固定の文字列を、文字の間に空白が1つ入っていても一致する正規表現にする。</summary>
+    private static string Spaced(string literal)
+        => string.Join(" ?", literal.Select(c => Regex.Escape(c.ToString())));
 
     // ---- 秘密情報(既知の形式) ----
     private static readonly Regex[] SecretRx =
@@ -191,7 +197,7 @@ public sealed class SensitiveTextDetector
 
         if (_options.DetectIdentifier)
             foreach (var r in IdentifierRx)
-                AddRegexMatches(r, rx, rxMap, line, DetectionCategory.Identifier, results);
+                AddRegexMatches(r, rx, rxMap, line, DetectionCategory.Identifier, results, extendToAdjacent: true);
 
         if (_options.DetectSecret)
             foreach (var r in SecretRx)

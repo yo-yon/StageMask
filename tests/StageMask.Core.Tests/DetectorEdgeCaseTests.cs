@@ -160,6 +160,15 @@ public class DetectorEdgeCaseTests
     }
 
     [Fact]
+    public void Identifier_TenantHostSplitByOcr_MasksWholeHost()
+    {
+        var line = Line("host: contoso.sharepo int.com");
+        var d = Detect(line).Where(x => x.Category == DetectionCategory.Identifier).ToList();
+        Assert.NotEmpty(d);
+        Assert.True(d.Max(x => x.Box.Right) >= line.Words[^1].Box.Right, "後半の「int.com」まで隠す");
+    }
+
+    [Fact]
     public void Lines_OnDifferentRows_AreNotMerged()
     {
         var a = new OcrLineBox(new[] { new OcrWordBox("test@examp", new RectD(0, 0, 100, 20)) });
