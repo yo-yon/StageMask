@@ -155,7 +155,7 @@ internal sealed class DetectionWorker : IDisposable
             sb.Append('\n');
         }
         foreach (var h in hits)
-            sb.Append("hit ").Append(h.Category).Append(' ').Append($"{h.Box.X:0},{h.Box.Y:0},{h.Box.Width:0}x{h.Box.Height:0}").Append(" '").Append(h.Text).Append("'\n");
+            sb.Append("hit ").Append(h.Category).Append(' ').Append($"{h.Box.X:0},{h.Box.Y:0},{h.Box.Width:0}x{h.Box.Height:0}").Append(" '").Append(h.MatchedText).Append("'\n");
         lock (_dumpGate)
         {
             try { if (_dumpPath is not null) System.IO.File.AppendAllText(_dumpPath, sb.ToString()); }
