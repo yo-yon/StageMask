@@ -274,6 +274,47 @@
                 </ScrollViewer>
             </TabItem>
 
+            <!-- ================= 共有用ミラー ================= -->
+            <TabItem Header="共有用ミラー">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="6" DataContext="{Binding ShareMirror}">
+                        <GroupBox Header="共有用ミラー(Teams・OBS 用)">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Text="取り込み元のモニターの映像にマスクを重ねて「共有用ミラー」ウィンドウに映します。自分の画面ではマスクを出さず(隠している場所に枠だけを表示)、相手にはマスクした映像を見せます。OFF のときは、これまでどおり画面に直接マスクを描きます。" />
+                                <CheckBox x:Name="MirrorEnabledBox" Content="共有用ミラーを使う" IsChecked="{Binding Enabled}" FontWeight="SemiBold" />
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="240" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="取り込み元(発表に使うモニター)" VerticalAlignment="Center" />
+                                    <ComboBox x:Name="MirrorSourceBox" Grid.Row="0" Grid.Column="1" Width="420" HorizontalAlignment="Left" Margin="0,3"
+                                              DisplayMemberPath="Name" SelectedValuePath="Device" SelectedValue="{Binding SourceMonitor}" />
+                                    <TextBlock Grid.Row="1" Text="ミラーの表示先" VerticalAlignment="Center" />
+                                    <ComboBox x:Name="MirrorTargetBox" Grid.Row="1" Grid.Column="1" Width="420" HorizontalAlignment="Left" Margin="0,3"
+                                              DisplayMemberPath="Name" SelectedValuePath="Device" SelectedValue="{Binding MirrorMonitor}" />
+                                    <TextBlock Grid.Row="2" Text="1秒あたりの更新回数(1〜60)" VerticalAlignment="Center" />
+                                    <TextBox Grid.Row="2" Grid.Column="1" Width="80" HorizontalAlignment="Left" Margin="0,3" Text="{Binding MaxFps}" />
+                                    <CheckBox Grid.Row="3" Grid.ColumnSpan="2" Content="自分の画面(取り込み元)で、隠している場所に枠を表示する" IsChecked="{Binding ShowLocalOutlines}" />
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button Content="共有用ミラーの設定を適用・保存" Style="{StaticResource PrimaryButton}" Click="ApplyMirror_Click" />
+                                    <Button Content="モニターの一覧を更新" Click="RefreshMonitors_Click" Margin="8,0,0,0" />
+                                    <TextBlock x:Name="MirrorSavedText" Style="{StaticResource SavedText}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+                        <GroupBox Header="使い方">
+                            <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Text="・Teams: 「ミラーの表示先」に空いているモニターを選ぶと、そのモニター全体にミラーを表示します。Teams ではそのモニターを「画面全体」として共有してください。&#x0a;・OBS(YouTube Live): ソースに「ウィンドウキャプチャ」を追加し、「StageMask 共有用ミラー」を選んでください。&#x0a;・取り込み元のモニターを直接共有すると、マスクは映りません(自分の画面では枠だけになるため)。必ずミラーを共有してください。&#x0a;・ミラーを正しく映せないとき(取り込めない・取り込み元のモニターに重なっている など)は、ミラーを真っ黒にして、自分の画面のマスクを通常の表示に戻します。&#x0a;・ミラーのウィンドウを閉じると、共有用ミラーは OFF になります。&#x0a;・取り込み中は、取り込み元のモニターの周りに黄色い枠が出ます(Windows の仕様。相手側には映りません)。" />
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <!-- ================= 表示・ホットキー ================= -->
             <TabItem Header="表示・ホットキー">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">

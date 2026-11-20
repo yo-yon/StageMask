@@ -20,7 +20,7 @@ namespace StageMask.App.Services;
 /// アプリの中心。約30fpsでウィンドウ位置・検出結果を集めてマスクを組み立て、全モニターのオーバーレイに描画する。
 /// UIスレッドで動作する(検出ワーカーだけが別スレッド)。
 /// </summary>
-internal sealed class MaskController : IDisposable
+internal sealed partial class MaskController : IDisposable
 {
     /// <summary>ウィンドウ全体マスクの余白(ドラッグ移動中のはみ出し対策)</summary>
     private const int WindowMaskPaddingPx = 4;
@@ -176,6 +176,7 @@ internal sealed class MaskController : IDisposable
         RecreateOverlays();
         _timer.Start();
         _worker.Start();
+        ApplyShareMirror();
     }
 
     // ------------------------------------------------------------------
@@ -214,6 +215,7 @@ internal sealed class MaskController : IDisposable
     public void ApplySettings()
     {
         ApplyAppearance();
+        ApplyShareMirror();
         _contentImages.Clear(); // 画像の指定が変わっていれば読み込み直す
         UpdateWheelMonitor();
         _worker.UpdateConfig(BuildWorkerConfig());
@@ -505,6 +507,7 @@ internal sealed class MaskController : IDisposable
             $"編集モード: ドラッグで追加 / マスクをドラッグで移動 / 右下の■でサイズ変更 / 右クリックで削除   終了: {Settings.Hotkeys.EditMode}(パネルを出す: {Settings.Hotkeys.ShowPanel})");
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         foreach (var o in _overlays) o.Render(state);
+        RenderMirrorMasks(state);
         _renderTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         _renderCount++;
         if (visuals.Count > _maxVisuals) _maxVisuals = visuals.Count;
@@ -745,6 +748,8 @@ internal sealed class MaskController : IDisposable
             _overlays.Add(overlay);
         }
         RaiseKeptWindow();
+        _mirrorLayoutDirty = true; // モニターの構成が変わったら、ミラーの取り込み元・表示先を選び直す
+        UpdateOverlayModes();
         _forceRender = true;
         Tick();
     }
@@ -807,6 +812,7 @@ internal sealed class MaskController : IDisposable
         _wheelMonitor.Dispose();
         _timer.Stop();
         _worker.Dispose();
+        StopShareMirror();
         foreach (var o in _overlays) o.Close();
         _overlays.Clear();
     }

@@ -205,6 +205,23 @@ public sealed class AppearanceSettings
     public bool HidePanelFromCapture { get; set; } = true;
 }
 
+/// <summary>
+/// 共有用ミラー: 取り込み元のモニターの映像にマスクを重ねて別のウィンドウに映し、そのウィンドウ(を表示したモニター)を共有する。
+/// 自分の画面ではマスクを出さず(枠だけ)、相手にはマスクした映像を見せる。OFF なら従来どおり画面に直接マスクを描く。
+/// </summary>
+public sealed class ShareMirrorSettings
+{
+    public bool Enabled { get; set; }
+    /// <summary>取り込み元のモニター(デバイス名。例 \\.\DISPLAY1)。空ならメインのモニター</summary>
+    public string SourceMonitor { get; set; } = "";
+    /// <summary>ミラーを全画面で表示するモニター(デバイス名)。空なら通常のウィンドウで表示</summary>
+    public string MirrorMonitor { get; set; } = "";
+    /// <summary>ミラーを更新する最大のコマ数(1秒あたり)</summary>
+    public int MaxFps { get; set; } = 15;
+    /// <summary>自分の画面(取り込み元のモニター)で、隠している場所に枠を表示する</summary>
+    public bool ShowLocalOutlines { get; set; } = true;
+}
+
 public sealed class HotkeySettings
 {
     public string ToggleMasks { get; set; } = "Ctrl+Alt+M";
@@ -223,6 +240,7 @@ public sealed class AppSettings
     public List<WindowRule> WindowRules { get; set; } = new();
     public DetectionSettings Detection { get; set; } = new();
     public AppearanceSettings Appearance { get; set; } = new();
+    public ShareMirrorSettings ShareMirror { get; set; } = new();
     public HotkeySettings Hotkeys { get; set; } = new();
     public DiagnosticsSettings Diagnostics { get; set; } = new();
 }

@@ -37,6 +37,28 @@ internal sealed class OverlayWindow : Window
 
     public RectD MonitorBounds { get; }
 
+    /// <summary>
+    /// 共有用ミラーの取り込み元のモニター: マスクを描かず、隠している場所に枠だけを描く(自分にだけ見える)。
+    /// このときは、このウィンドウを取り込みから外す(枠がミラーに映らないように)。
+    /// </summary>
+    public bool OutlineOnly { get; private set; }
+    public bool ShowOutlines { get; private set; } = true;
+
+    public void SetOutlineMode(bool outlineOnly, bool showOutlines)
+    {
+        if (OutlineOnly == outlineOnly && ShowOutlines == showOutlines) return;
+        OutlineOnly = outlineOnly;
+        ShowOutlines = showOutlines;
+        ApplyCaptureAffinity();
+        if (_state is not null) Render(_state);
+    }
+
+    private void ApplyCaptureAffinity()
+    {
+        if (_hwnd == IntPtr.Zero) return;
+        NativeMethods.SetWindowDisplayAffinity(_hwnd, OutlineOnly ? NativeMethods.WDA_EXCLUDEFROMCAPTURE : NativeMethods.WDA_NONE);
+    }
+
     /// <summary>編集モードで新しいマスクが描かれた(物理座標)</summary>
     public event Action<RectD>? ManualMaskCreated;
     /// <summary>編集モードでマスクが移動・リサイズされた(物理座標)</summary>
@@ -75,6 +97,7 @@ internal sealed class OverlayWindow : Window
         base.OnSourceInitialized(e);
         _hwnd = new WindowInteropHelper(this).Handle;
         ApplyExStyle();
+        ApplyCaptureAffinity();
         PlaceOnMonitor();
     }
 
@@ -145,6 +168,22 @@ internal sealed class OverlayWindow : Window
 
         var monitorLocal = new Rect(0, 0, _canvas.ActualWidth > 0 ? _canvas.ActualWidth : ActualWidth,
                                           _canvas.ActualHeight > 0 ? _canvas.ActualHeight : ActualHeight);
+
+        // 共有用ミラーの取り込み元: マスクの代わりに枠だけを描く(編集中は通常どおり描いて操作できるようにする)
+        if (OutlineOnly && !state.EditMode)
+        {
+            if (!ShowOutlines) return;
+            var stroke = new SolidColorBrush(Color.FromArgb(0xC0, 0xFF, 0x8C, 0x00));
+            stroke.Freeze();
+            foreach (var v in state.Visuals)
+            {
+                if (v.Kind == MaskKind.DebugBox) continue;
+                var local = ToLocal(v.ScreenRect);
+                if (local.Width <= 0 || local.Height <= 0 || !local.IntersectsWith(monitorLocal)) continue;
+                AddAt(new Rectangle { Stroke = stroke, StrokeThickness = 2, StrokeDashArray = new DoubleCollection { 3, 2 }, IsHitTestVisible = false }, local);
+            }
+            return;
+        }
         // 描画順: 手動マスクのモザイク/ぼかし → それ以外。
         // 手動マスクのモザイクは「画面そのもの」を元に作るため、ウィンドウ全体のマスクなど
         // 塗りつぶしの下にある内容が含まれうる。塗りつぶしより下に描いて、上書きで漏れないようにする。
@@ -201,7 +240,7 @@ internal sealed class OverlayWindow : Window
         }
     }
 
-    private static FrameworkElement CreateMaskElement(MaskVisual v, OverlayState state, Rect local)
+    internal static FrameworkElement CreateMaskElement(MaskVisual v, OverlayState state, Rect local)
     {
         var grid = new Grid { ClipToBounds = true };
 

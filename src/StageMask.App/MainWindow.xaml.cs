@@ -36,8 +36,15 @@ internal partial class MainWindow : Window
         ManualList.ItemsSource = controller.Settings.ManualMasks;
         NgWordsBox.Text = string.Join(Environment.NewLine, controller.Settings.Detection.NgWords);
         UpdateNgWordsSummary();
+        RefreshMonitorChoices();
 
-        controller.StateChanged += (_, _) => SyncToggles();
+        controller.StateChanged += (_, _) =>
+        {
+            SyncToggles();
+            // ミラーのウィンドウを閉じて OFF になったときに、チェックを外す
+            if (MirrorEnabledBox.IsChecked != controller.Settings.ShareMirror.Enabled)
+                MirrorEnabledBox.IsChecked = controller.Settings.ShareMirror.Enabled;
+        };
         controller.ManualMasksChanged += (_, _) => ManualList.Items.Refresh();
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -137,6 +144,7 @@ internal partial class MainWindow : Window
         if (_controller.Settings.Detection.MaskOnWheel && _controller.Settings.Detection.Enabled && !_controller.WheelMonitorRunning) parts.Add("⚠ ホイール検知を開始できませんでした");
         if (_controller.FailClosedCount > 0)
             parts.Add($"🛡 検査できていないため全体を隠しているウィンドウ: {_controller.FailClosedCount}({_controller.FailClosedReason})");
+        if (_controller.ShareMirrorStatus is { } mirror) parts.Add("🪞 " + mirror);
         if (_controller.Settings.Diagnostics.Enabled) parts.Add("📝 診断ログ記録中");
         var error = _controller.WorkerError ?? _controller.LastError ?? _controller.ContentImageError ?? _controller.StoreWarning ?? _diagnostics?.Error;
         if (!string.IsNullOrEmpty(error)) parts.Add("⚠ " + error);
@@ -327,6 +335,47 @@ internal partial class MainWindow : Window
         {
             Logger.Write("OpenDiagnosticsFolder", ex);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 共有用ミラー
+    // ------------------------------------------------------------------
+
+    private sealed record MonitorChoice(string Device, string Name);
+
+    private void RefreshMonitorChoices()
+    {
+        var monitors = MonitorEnumerator.GetMonitors();
+        var sources = new List<MonitorChoice> { new("", "メインのモニター") };
+        sources.AddRange(monitors.Select(m => new MonitorChoice(m.DeviceName, m.DisplayName)));
+        var targets = new List<MonitorChoice> { new("", "通常のウィンドウで表示(OBS のウィンドウキャプチャ・Teams のウィンドウ共有向け)") };
+        targets.AddRange(monitors.Select(m => new MonitorChoice(m.DeviceName, "全画面で表示: " + m.DisplayName)));
+
+        var cfg = _controller.Settings.ShareMirror;
+        // 保存したモニターが今は接続されていなくても、選択が消えないように一覧に残す
+        if (!string.IsNullOrEmpty(cfg.SourceMonitor) && sources.All(c => c.Device != cfg.SourceMonitor))
+            sources.Add(new(cfg.SourceMonitor, cfg.SourceMonitor + "(接続されていません)"));
+        if (!string.IsNullOrEmpty(cfg.MirrorMonitor) && targets.All(c => c.Device != cfg.MirrorMonitor))
+            targets.Add(new(cfg.MirrorMonitor, cfg.MirrorMonitor + "(接続されていません)"));
+        MirrorSourceBox.ItemsSource = sources;
+        MirrorTargetBox.ItemsSource = targets;
+        MirrorSourceBox.SelectedValue = cfg.SourceMonitor;
+        MirrorTargetBox.SelectedValue = cfg.MirrorMonitor;
+    }
+
+    private void RefreshMonitors_Click(object sender, RoutedEventArgs e) => RefreshMonitorChoices();
+
+    private void ApplyMirror_Click(object sender, RoutedEventArgs e)
+    {
+        var cfg = _controller.Settings.ShareMirror;
+        cfg.MaxFps = Math.Clamp(cfg.MaxFps, 1, 60);
+        string? warning = null;
+        if (cfg.Enabled && !string.IsNullOrEmpty(cfg.MirrorMonitor) &&
+            string.Equals(cfg.MirrorMonitor, string.IsNullOrEmpty(cfg.SourceMonitor)
+                ? MonitorEnumerator.Find(MonitorEnumerator.GetMonitors(), "")?.DeviceName : cfg.SourceMonitor, StringComparison.OrdinalIgnoreCase))
+            warning = "取り込み元と同じモニターには全画面で表示できないため、通常のウィンドウで表示します";
+        _controller.ApplySettings();
+        ShowSaved(MirrorSavedText, warning);
     }
 
     private void ApplyAppearance_Click(object sender, RoutedEventArgs e)

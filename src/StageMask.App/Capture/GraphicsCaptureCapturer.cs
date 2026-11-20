@@ -168,6 +168,14 @@ internal static class CaptureItemHelper
         var itemPointer = interop.CreateForWindow(hwnd, ref iid);
         return GraphicsCaptureItem.FromAbi(itemPointer);
     }
+
+    public static GraphicsCaptureItem? CreateForMonitor(IntPtr hmonitor)
+    {
+        var interop = GraphicsCaptureItem.As<IGraphicsCaptureItemInterop>();
+        var iid = GraphicsCaptureItemGuid;
+        var itemPointer = interop.CreateForMonitor(hmonitor, ref iid);
+        return GraphicsCaptureItem.FromAbi(itemPointer);
+    }
 }
 
 /// <summary>Direct3D 11 デバイスを作り、WinRT の IDirect3DDevice に変換する。</summary>
