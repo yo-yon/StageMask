@@ -287,7 +287,8 @@ public sealed class SensitiveTextDetector
                 var (_, pt, pbox) = words[k - 1];
                 bool fragment = IsShortAsciiFragment(pt) || IsShortAsciiFragment(t);
                 double gap = box.X - pbox.Right;
-                bool space = HasSpaceBetween(pbox, box) && (!fragment || gap > charWidth);
+                // 細い文字の前後のすき間(文字幅の半分程度まで)は、断片でなくてもつなぐ
+                bool space = HasSpaceBetween(pbox, box) && gap > charWidth * 0.5 && (!fragment || gap > charWidth);
                 if (space) { text.Append(' '); map.Add(-1); }
             }
             foreach (var c in t) { text.Append(TextNormalizer.FoldDash(c)); map.Add(wi); }
@@ -583,6 +584,8 @@ public sealed class SensitiveTextDetector
     private static bool IsAsciiWord(string? w)
     {
         if (string.IsNullOrEmpty(w)) return false;
+        // 日本語の OCR は英数字を全角(「Ｉ」「ｌ」など)で返すことがあるため、互換文字を半角にしてから調べる
+        w = w.Normalize(NormalizationForm.FormKC);
         foreach (var c in w) if (c > 0x7E || c < 0x21) return false;
         return true;
     }

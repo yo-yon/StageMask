@@ -116,6 +116,53 @@ internal sealed class WindowScanState
 /// </summary>
 internal sealed class DetectionWorker : IDisposable
 {
+    // ---- 調査用: OCR の読み取り結果を一定時間だけファイルに書き出す ----
+    private long _dumpUntilTicks;
+    private readonly object _dumpGate = new();
+    private string? _dumpPath;
+
+    /// <summary>
+    /// これから seconds 秒の間に行う OCR の結果(単語・位置・どの検出に当たったか)を書き出す。書き出し先のパスを返す。
+    /// 画面の文字がそのまま保存されるため、ダミーのデータを表示しているときだけ使う。
+    /// </summary>
+    public string StartOcrDump(int seconds)
+    {
+        var dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "StageMask", "ocr-dump");
+        System.IO.Directory.CreateDirectory(dir);
+        var path = System.IO.Path.Combine(dir, $"ocr-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+        lock (_dumpGate)
+        {
+            _dumpPath = path;
+            System.IO.File.WriteAllText(path, $"StageMask OCR dump {AppInfo.Version} {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n", new System.Text.UTF8Encoding(true));
+        }
+        Interlocked.Exchange(ref _dumpUntilTicks, DateTime.UtcNow.AddSeconds(seconds).Ticks);
+        _forceFullOcr = true;
+        return path;
+    }
+
+    private volatile bool _forceFullOcr;
+
+    private void DumpOcr(string app, int band, int engine, IReadOnlyList<OcrLineBox> lines, IReadOnlyList<DetectionResult> hits)
+    {
+        if (DateTime.UtcNow.Ticks > Interlocked.Read(ref _dumpUntilTicks)) return;
+        var sb = new System.Text.StringBuilder();
+        sb.Append("=== ").Append(app).Append(" band=").Append(band).Append(" engine=").Append(engine).Append('\n');
+        for (int li = 0; li < lines.Count; li++)
+        {
+            sb.Append("line ").Append(li).Append(':');
+            foreach (var w in lines[li].Words)
+                sb.Append(" [").Append(w.Text).Append(' ').Append($"{w.Box.X:0},{w.Box.Y:0},{w.Box.Width:0}x{w.Box.Height:0}").Append(']');
+            sb.Append('\n');
+        }
+        foreach (var h in hits)
+            sb.Append("hit ").Append(h.Category).Append(' ').Append($"{h.Box.X:0},{h.Box.Y:0},{h.Box.Width:0}x{h.Box.Height:0}").Append(" '").Append(h.Text).Append("'\n");
+        lock (_dumpGate)
+        {
+            try { if (_dumpPath is not null) System.IO.File.AppendAllText(_dumpPath, sb.ToString()); }
+            catch (Exception ex) { Logger.Write("OCR dump", ex); }
+        }
+    }
+
     private readonly Func<IReadOnlyList<WorkTarget>> _getTargets;
     private readonly DetectionHoldBuffer<DetectionPayload> _hold;
     private readonly ScanStatusTracker _scanStatus;
@@ -633,6 +680,9 @@ internal sealed class DetectionWorker : IDisposable
 
                 var hold = TimeSpan.FromMilliseconds(Math.Max(0, cfg.HoldMs));
                 var dirty = sig.ChangedTiles(verified);
+                // 調査用の書き出し中は、変化がなくても全体を読み直す
+                if (dirty.Count == 0 && _forceFullOcr && DateTime.UtcNow.Ticks <= Interlocked.Read(ref _dumpUntilTicks))
+                    dirty = Enumerable.Range(0, sig.Rows).SelectMany(r => Enumerable.Range(0, sig.Columns).Select(c => (c, r))).ToList();
                 if (dirty.Count == 0)
                 {
                     // 内容が変わっていない: OCRし直さず、これまでの検出結果を保持し続ける
@@ -646,7 +696,8 @@ internal sealed class DetectionWorker : IDisposable
                 // 変化した行(と上下1行)だけを横帯にしてOCRする。変化が広い・初回は全体を読む
                 var bands = sig.Bands(dirty, margin: 1);
                 double bandArea = bands.Sum(b => sig.BandRect(b.RowStart, b.RowEnd).Area);
-                if (!sig.IsSameLayout(verified) || bandArea > 0.6 * frame.Width * frame.Height)
+                bool dumping = DateTime.UtcNow.Ticks <= Interlocked.Read(ref _dumpUntilTicks);
+                if (!sig.IsSameLayout(verified) || bandArea > 0.6 * frame.Width * frame.Height || (dumping && _forceFullOcr))
                     bands = new List<(int RowStart, int RowEnd)> { (0, sig.Rows - 1) };
                 var bandRects = bands.Select(b => sig.BandRect(b.RowStart, b.RowEnd)).ToList();
                 if (bands.Count == 1 && bands[0].RowStart == 0 && bands[0].RowEnd == sig.Rows - 1) Interlocked.Increment(ref _ocrFull);
@@ -661,12 +712,15 @@ internal sealed class DetectionWorker : IDisposable
                     if (bh <= 0) continue;
                     var bandFrame = new CapturedFrame(frame.Crop(0, by, frame.Width, bh), frame.Width, bh, frame.Width * 4, frame.Origin);
                     var perEngine = await ocr.RecognizeAsync(bandFrame, ct).ConfigureAwait(false);
-                    foreach (var lines in perEngine)
+                    for (int ei = 0; ei < perEngine.Count; ei++)
                     {
+                        var lines = perEngine[ei];
                         foreach (var line in lines)
                             foreach (var w in line.Words)
                                 words.Add(w with { Box = w.Box.Offset(0, by) });
-                        foreach (var d in detector.Detect(lines))
+                        var hits = detector.Detect(lines);
+                        if (dumping) DumpOcr(t.Window.ProcessName, by, ei, lines, hits);
+                        foreach (var d in hits)
                         {
                             var r = d.Box.Offset(0, by).Inflate(cfg.PaddingPx).Intersect(bounds);
                             if (r.IsEmpty) continue;

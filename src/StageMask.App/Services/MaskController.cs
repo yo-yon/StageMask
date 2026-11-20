@@ -66,6 +66,8 @@ internal sealed partial class MaskController : IDisposable
     /// <summary>ホイール操作の累計回数</summary>
     public long WheelEventCount => Interlocked.Read(ref _wheelEvents);
     public long OcrFullCount => _worker.OcrFullCount;
+    /// <summary>調査用: これから seconds 秒の OCR 結果をファイルに書き出す</summary>
+    public string StartOcrDump(int seconds) => _worker.StartOcrDump(seconds);
     public long OcrBandCount => _worker.OcrBandCount;
     public long OcrSkippedCount => _worker.OcrSkippedCount;
     public long CaptureFailureCount => _worker.CaptureFailureCount;
@@ -411,7 +413,10 @@ internal sealed partial class MaskController : IDisposable
                     bool largeChange = Settings.Detection.MaskOnLargeChange && pending is not null && !pending.VideoLike &&
                                        (pending.Fraction >= LargeChangeFraction ||
                                         (now - pending.LastMotionUtc).TotalMilliseconds < Math.Clamp(Settings.Detection.WheelMaskMs, 100, 5000));
-                    if (hide is null && (wheeling || largeChange))
+                    // ウィンドウを動かしている間(と止まった直後)は全体を隠す。マスクの位置の更新と、画面共有・共有用ミラーの
+                    // 取り込みのタイミングがずれると、素早く動かしたときに一瞬見えてしまうため
+                    bool moving = IsMoving(w, now);
+                    if (hide is null && (wheeling || largeChange || moving))
                     {
                         AddClipped(visuals, new MaskVisual(w.FrameRect.Inflate(WindowMaskPaddingPx), MaskKind.Window, MaskStyle.Solid, null), occluders);
                         scrollMasks++;
@@ -617,6 +622,26 @@ internal sealed partial class MaskController : IDisposable
             above.Add(w.FrameRect);
         }
         return visible;
+    }
+
+    private readonly Dictionary<IntPtr, (RectD Rect, DateTime ChangedUtc)> _lastRects = new();
+    private static readonly TimeSpan MoveMaskHold = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>ウィンドウの位置・大きさが変わってから MoveMaskHold 以内か(動かしている最中か)。</summary>
+    private bool IsMoving(WindowInfo w, DateTime now)
+    {
+        if (!_lastRects.TryGetValue(w.Handle, out var last))
+        {
+            _lastRects[w.Handle] = (w.FrameRect, DateTime.MinValue);
+            if (_lastRects.Count > 512) _lastRects.Clear(); // 閉じたウィンドウの分が溜まらないように
+            return false;
+        }
+        if (last.Rect != w.FrameRect)
+        {
+            _lastRects[w.Handle] = (w.FrameRect, now);
+            return true;
+        }
+        return now - last.ChangedUtc < MoveMaskHold;
     }
 
     private static void AddTarget(Dictionary<IntPtr, WorkTarget> targets, WindowInfo w,

@@ -176,6 +176,16 @@
                         <TextBlock Style="{StaticResource Hint}"
                                    Text="「機密情報だけ隠す(OCR)」ルールの対象ウィンドウを定期的に読み取り、該当する文字を隠します。OCRには数百ミリ秒かかるため、新しく表示された文字が一瞬見えることがあります。確実に隠したい画面は「ウィンドウ全体を隠す」か手動マスクを併用してください。" />
 
+                        <GroupBox Header="対象のモニター(自動検出・マスク)">
+                            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,6"
+                                           Text="画面を共有するモニターだけに絞ると、ほかの画面のウィンドウは取り込み・文字の読み取りをしないため、CPU とメモリの使用量が減ります。共有用ミラーを使っている間は、この設定にかかわらず取り込み元のモニターだけを対象にします。選んだモニターが見つからないときは、すべてのモニターを対象にします。変更はこのタブの「自動検出の設定を適用・保存」で反映されます。" />
+                                <ComboBox x:Name="TargetMonitorBox" Width="420" HorizontalAlignment="Left"
+                                          DisplayMemberPath="Name" SelectedValuePath="Device" SelectedValue="{Binding TargetMonitor}" />
+                                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                           Text="※ 選んだモニター以外の画面は隠れません。その画面を共有・録画しないときだけ絞ってください。" />
+                            </StackPanel>
+                        </GroupBox>
                         <GroupBox Header="検出する情報">
                             <StackPanel>
                                 <CheckBox Content="メールアドレス・UPN" IsChecked="{Binding DetectEmail}" />
@@ -309,18 +319,8 @@
                                 </StackPanel>
                             </StackPanel>
                         </GroupBox>
-                        <GroupBox Header="マスクするモニター">
-                            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
-                                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,6"
-                                           Text="画面を共有するモニターだけに絞ると、ほかの画面のウィンドウは取り込み・文字の読み取りをしないため、CPU とメモリの使用量が減ります。共有用ミラーを使っている間は、この設定にかかわらず取り込み元のモニターだけを対象にします。選んだモニターが見つからないときは、すべてのモニターを対象にします。変更は上の「共有用ミラーの設定を適用・保存」で反映されます。" />
-                                <ComboBox x:Name="TargetMonitorBox" Width="420" HorizontalAlignment="Left"
-                                          DisplayMemberPath="Name" SelectedValuePath="Device" SelectedValue="{Binding TargetMonitor}" />
-                                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,0"
-                                           Text="※ 選んだモニター以外の画面は隠れません。その画面を共有・録画しないときだけ絞ってください。" />
-                            </StackPanel>
-                        </GroupBox>
                         <GroupBox Header="使い方">
-                            <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Text="・Teams: 「ミラーの表示先」に空いているモニターを選ぶと、そのモニター全体にミラーを表示します。Teams ではそのモニターを「画面全体」として共有してください。&#x0a;・OBS(YouTube Live): ソースに「ウィンドウキャプチャ」を追加し、「StageMask 共有用ミラー」を選んでください。&#x0a;・取り込み元のモニターを直接共有すると、マスクは映りません(自分の画面では枠だけになるため)。必ずミラーを共有してください。&#x0a;・ミラーを正しく映せないとき(取り込めない・取り込み元のモニターに重なっている など)は、ミラーを真っ黒にして、自分の画面のマスクを通常の表示に戻します。&#x0a;・ミラーのウィンドウを閉じると、共有用ミラーは OFF になります。&#x0a;・取り込み中は、取り込み元のモニターの周りに黄色い枠が出ます(Windows の仕様。相手側には映りません)。" />
+                            <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Text="・Teams: 「ミラーの表示先」に空いているモニターを選ぶと、そのモニター全体にミラーを表示します。Teams ではそのモニターを「画面全体」として共有してください。&#x0a;・OBS(YouTube Live): ソースに「ウィンドウキャプチャ」を追加し、「StageMask 共有用ミラー」を選んでください。&#x0a;・取り込み元のモニターを直接共有すると、マスクは映りません(自分の画面では枠だけになるため)。必ずミラーを共有してください。&#x0a;・ミラーを正しく映せないとき(取り込めない・取り込み元のモニターに重なっている など)は、ミラーを真っ黒にして、自分の画面のマスクを通常の表示に戻します。&#x0a;・ミラーのウィンドウを閉じると、共有用ミラーは OFF になります。&#x0a;・ミラーを使っている間は、取り込み元のモニターに重なるウィンドウだけを対象にします(「自動検出」タブの「対象のモニター」より優先)。&#x0a;・取り込み中は、取り込み元のモニターの周りに黄色い枠が出ます(Windows の仕様。相手側には映りません)。" />
                         </GroupBox>
                     </StackPanel>
                 </ScrollViewer>
@@ -394,6 +394,13 @@
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,0"
                                            Text="保存先: %APPDATA%\StageMask\diag(CSV。Excelで開けます)。1ファイル10MBを超えたら次のファイルに切り替え、新しい10ファイルだけを残します。記録するのは数値と操作の種類(パニックON など)だけで、画面の文字・NGワード・ウィンドウのタイトルは記録しません。" />
+                                <Separator Margin="0,10" />
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="OCR の読み取り結果を10秒間だけ保存する(調査用)" Click="OcrDump_Click" />
+                                    <TextBlock x:Name="OcrDumpText" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,0" TextWrapping="Wrap"
+                                           Text="マスクが一部しかかからないときの原因調査用です。押してから10秒の間、対象のウィンドウを読み取った文字と位置をそのまま %APPDATA%\StageMask\ocr-dump に保存します。画面の文字がそのまま残るため、ダミーのデータだけを表示しているときに使い、調査が終わったらファイルを削除してください。" />
                             </StackPanel>
                         </GroupBox>
 

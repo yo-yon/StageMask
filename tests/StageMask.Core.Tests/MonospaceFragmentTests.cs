@@ -31,3 +31,16 @@ public class MonospaceFragmentTests
     public void OrdinarySentence_IsNotSecret()
         => Assert.DoesNotContain(Detect(Line("I am at the office today")), r => r.Category == DetectionCategory.Secret);
 }
+
+public class FullWidthFragmentTests
+{
+    [Fact]
+    public void FullWidthTail_IsCoveredByExtension()
+    {
+        // 日本語 OCR が後半を全角で返した場合(「ＩｊＫｌ…」)でも、キーの後ろまで隠す
+        var line = TestHelpers.Line("sk-proj-AbCdEfGh ＩｊＫｌＭｎＯｐＱｒＳｔＵｖＷｘＹｚ0123456789");
+        var right = line.Words[^1].Box.Right;
+        var hits = TestHelpers.Detect(line).Where(r => r.Category == DetectionCategory.Secret).ToList();
+        Assert.Contains(hits, h => h.Box.Right >= right - 0.5);
+    }
+}

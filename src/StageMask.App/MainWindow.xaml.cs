@@ -270,6 +270,17 @@ internal partial class MainWindow : Window
         .Distinct()
         .ToList();
 
+    private void OcrDump_Click(object sender, RoutedEventArgs e)
+    {
+        var r = MessageBox.Show(this,
+            "これから10秒間、自動検出の対象ウィンドウで読み取った文字を、そのままファイルに保存します。\n\n" +
+            "本物の機密情報が画面に出ていないこと(ダミーのデータだけであること)を確かめてから「OK」を押してください。",
+            "OCR の読み取り結果を保存", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+        if (r != MessageBoxResult.OK) return;
+        var path = _controller.StartOcrDump(10);
+        OcrDumpText.Text = "保存中(10秒): " + path;
+    }
+
     private void ApplyDetection_Click(object sender, RoutedEventArgs e)
     {
         _controller.Settings.Detection.NgWords = ParseNgWords();

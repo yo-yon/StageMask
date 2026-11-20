@@ -31,6 +31,8 @@ internal static class WindowEnumerator
     private static readonly HashSet<string> ExcludedClasses = new(StringComparer.OrdinalIgnoreCase)
     {
         "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
+        // ウィンドウの影だけを描くウィンドウ(中身がなく、取り込むと真っ黒になって全体マスクの原因になる)
+        "SysShadow",
     };
 
     private static readonly object Gate = new(); // UIスレッドと検出ワーカーの両方から呼ばれるため
@@ -86,6 +88,7 @@ internal static class WindowEnumerator
         // 画面共有・録画に映らない設定のウィンドウ(Teams の共有中の赤枠・操作バーなど)は、相手に見えないので対象外。
         // 取り込もうとしても失敗して時間がかかり、全体マスクの原因にもなっていた
         if (IsExcludedFromCapture(h)) return null;
+        if (IsSnapLayoutBar(cls, frameRect)) return null;
 
         var ex = NativeMethods.GetWindowLong(h, NativeMethods.GWL_EXSTYLE);
         uint style = (uint)(NativeMethods.GetWindowLong(h, NativeMethods.GWL_STYLE) & 0xFFFFFFFF);
@@ -108,6 +111,24 @@ internal static class WindowEnumerator
             NativeMethods.IsIconic(h),
             popupLike,
             OcclusionPolicy.CanOcclude(style, ex, title));
+    }
+
+    /// <summary>
+    /// Windows 11 でウィンドウを画面の上端へドラッグしたときに出る「スナップ レイアウト」の帯か。
+    /// レイアウトの枠を示すだけで画面の内容は映らないため対象外にする(取り込むと真っ黒になり、全体マスクが出ていた)。
+    /// 同じクラスは Alt+Tab・タスク ビューなどでも使われる(縮小した画面が映る)ため、
+    /// 「モニターの上端に接し、横幅いっぱいで、高さがモニターの 35% 以下」のものだけに限る。
+    /// </summary>
+    private static bool IsSnapLayoutBar(string cls, RectD r)
+    {
+        if (!string.Equals(cls, "XamlExplorerHostIslandWindow", StringComparison.Ordinal)) return false;
+        foreach (var m in MonitorEnumerator.GetMonitors())
+        {
+            var b = m.Bounds;
+            if (Math.Abs(r.Y - b.Y) <= 2 && Math.Abs(r.X - b.X) <= 2 && Math.Abs(r.Width - b.Width) <= 4 && r.Height <= b.Height * 0.35)
+                return true;
+        }
+        return false;
     }
 
     private static RectD VirtualScreenRect() => new(
