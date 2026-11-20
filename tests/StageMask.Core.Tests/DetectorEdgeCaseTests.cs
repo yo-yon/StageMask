@@ -55,7 +55,7 @@ public class DetectorEdgeCaseTests
 
     // v0.5.7: 入力途中のメールアドレスも隠す(完成するまで見えてしまうため)
     [Theory]
-    [InlineData("yoh@")]
+    [InlineData("taro@")]
     [InlineData("taro@exa")]
     [InlineData("taro@example")]
     [InlineData("user@localhost")]
