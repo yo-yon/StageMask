@@ -67,8 +67,10 @@ jobs:
       - name: 配布用の exe を用意
         shell: pwsh
         run: |
-          # 展開の手間がないよう、exe をそのまま添付する(ファイル名に版を入れて、どの版か分かるようにする)
-          $name = "StageMask-v$env:VERSION-win-x64.exe"
+          # ファイル名は版によらず同じにする。README の「最新版をダウンロード」のリンク
+          # (releases/latest/download/StageMask-win-x64.exe)が、いつも最新版を指すようにするため。
+          # どの版かは、リリースの名前と、起動後のタイトルバーの表示で分かる
+          $name = "StageMask-win-x64.exe"
           New-Item -ItemType Directory -Path dist | Out-Null
           Copy-Item publish/StageMask.exe -Destination dist/$name
           $hash = (Get-FileHash dist/$name -Algorithm SHA256).Hash.ToLower()
@@ -85,23 +87,24 @@ jobs:
           ## StageMask $tag (試作版)
 
           ### 使い方
-          1. 下の「Assets」から ``StageMask-$tag-win-x64.exe`` をダウンロードします。
+          1. 下の「Assets」から ``StageMask-win-x64.exe`` をダウンロードします(最新版は README の「ダウンロード」からも入手できます)。
           2. ダブルクリックで起動します(展開や .NET のインストールは不要です)。
           3. 初回は Windows SmartScreen の警告が出ることがあります(署名なしの試作版のため)。「詳細情報」→「実行」で起動できます。
           4. 使い方は [README](https://github.com/${{ github.repository }}#readme) を参照してください。
 
           ### 確認用
           ``.sha256`` ファイルに exe の SHA-256 ハッシュ値を載せています。
-          PowerShell で ``Get-FileHash .\StageMask-$tag-win-x64.exe`` を実行し、値が一致することを確認できます。
+          PowerShell で ``Get-FileHash .\StageMask-win-x64.exe`` を実行し、値が一致することを確認できます。
 
           ### 変更内容
           前の版からのコミット一覧は、このページ下部の自動生成部分を参照してください。
           "@
-          # 0.x の間は「プレリリース」として公開する
+          # 「最新のリリース(Latest)」にする。プレリリースにすると releases/latest の対象にならず、
+          # README のダウンロードのリンクが古い版を指してしまうため(試作版であることは名前に入れる)
           # (A) の場合はタグがまだないので、このコミットにタグを作る
           gh release create $tag "$env:ASSET" "$env:ASSET.sha256" `
             --target "${{ github.sha }}" `
-            --title "StageMask $tag" `
+            --title "StageMask $tag(試作版)" `
             --notes $notes `
             --generate-notes `
-            --prerelease
+            --latest
