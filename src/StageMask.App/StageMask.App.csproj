@@ -11,12 +11,19 @@
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- exe・タスクバーのアイコン(元の図柄は Assets/StageMask.svg) -->
+    <ApplicationIcon>Assets\StageMask.ico</ApplicationIcon>
     <AssemblyName>StageMask</AssemblyName>
     <RootNamespace>StageMask.App</RootNamespace>
-    <Version>0.5.32</Version>
+    <Version>0.5.33</Version>
     <Product>StageMask</Product>
     <Description>登壇・画面共有中に見せてはいけない領域を隠すオーバーレイツール</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ウィンドウのタイトルバー用に、アイコンをアプリの中にも入れる -->
+    <Resource Include="Assets\StageMask.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\StageMask.Core\StageMask.Core.csproj" />

@@ -33,6 +33,8 @@ internal sealed class MirrorWindow : Window
     public MirrorWindow()
     {
         Title = "StageMask 共有用ミラー";
+        try { Icon = new BitmapImage(new Uri("pack://application:,,,/Assets/StageMask.ico")); }
+        catch { /* アイコンが読めなくてもミラーは動かす */ }
         Background = Brushes.Black;
         Width = 960;
         Height = 560;
