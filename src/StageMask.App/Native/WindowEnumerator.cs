@@ -81,6 +81,11 @@ internal static class WindowEnumerator
         if (!NativeMethods.GetWindowRect(h, out var wr) || wr.Width <= 0 || wr.Height <= 0) return null;
         var windowRect = new RectD(wr.Left, wr.Top, wr.Width, wr.Height);
         var frameRect = GetFrameRect(h) ?? windowRect;
+        // どのモニターにも映らない位置のウィンドウ(-32000 などに置かれた補助ウィンドウ)は対象外
+        if (!frameRect.IntersectsWith(VirtualScreenRect())) return null;
+        // 画面共有・録画に映らない設定のウィンドウ(Teams の共有中の赤枠・操作バーなど)は、相手に見えないので対象外。
+        // 取り込もうとしても失敗して時間がかかり、全体マスクの原因にもなっていた
+        if (IsExcludedFromCapture(h)) return null;
 
         var ex = NativeMethods.GetWindowLong(h, NativeMethods.GWL_EXSTYLE);
         uint style = (uint)(NativeMethods.GetWindowLong(h, NativeMethods.GWL_STYLE) & 0xFFFFFFFF);
@@ -104,6 +109,19 @@ internal static class WindowEnumerator
             popupLike,
             OcclusionPolicy.CanOcclude(style, ex, title));
     }
+
+    private static RectD VirtualScreenRect() => new(
+        NativeMethods.GetSystemMetrics(NativeMethods.SM_XVIRTUALSCREEN),
+        NativeMethods.GetSystemMetrics(NativeMethods.SM_YVIRTUALSCREEN),
+        NativeMethods.GetSystemMetrics(NativeMethods.SM_CXVIRTUALSCREEN),
+        NativeMethods.GetSystemMetrics(NativeMethods.SM_CYVIRTUALSCREEN));
+
+    /// <summary>
+    /// 画面共有・録画に映らない設定(WDA_EXCLUDEFROMCAPTURE)か、中身が映らない設定(WDA_MONITOR)のウィンドウか。
+    /// 読み取れないときは「映る」とみなす(安全側)。
+    /// </summary>
+    private static bool IsExcludedFromCapture(IntPtr h)
+        => NativeMethods.GetWindowDisplayAffinity(h, out var a) && a != NativeMethods.WDA_NONE;
 
     /// <summary>位置・最小化状態だけを再取得する(毎フレーム呼ぶ軽量版)。閉じられていれば null。</summary>
     public static WindowInfo? RefreshGeometry(WindowInfo w)

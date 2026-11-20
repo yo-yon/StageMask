@@ -44,6 +44,7 @@ internal sealed partial class MaskController
         }
 
         var monitors = MonitorEnumerator.GetMonitors();
+        _monitorCache = monitors;
         var source = MonitorEnumerator.Find(monitors, cfg.SourceMonitor);
         var target = string.IsNullOrEmpty(cfg.MirrorMonitor) ? null : MonitorEnumerator.Find(monitors, cfg.MirrorMonitor);
         if (target is not null && source is not null && target.Handle == source.Handle) target = null; // 同じモニターには全画面にしない
@@ -176,6 +177,22 @@ internal sealed partial class MaskController
                 o.SetOutlineMode(false, true);
         }
     }
+
+    /// <summary>
+    /// マスクするモニターの範囲。null ならすべてのモニター。
+    /// 共有用ミラーが正常に映っている間は、取り込み元のモニターだけ(共有するのはその画面だけのため)。
+    /// それ以外は設定の「マスクするモニター」。
+    /// </summary>
+    private RectD? TargetArea()
+    {
+        if (_mirrorHealthy && _mirrorSource is not null) return _mirrorSource.Bounds;
+        if (string.IsNullOrEmpty(Settings.TargetMonitor)) return null;
+        var m = MonitorEnumerator.Find(_monitorCache ??= MonitorEnumerator.GetMonitors(), Settings.TargetMonitor);
+        // 設定したモニターが見つからない(外した)ときは、すべてのモニターを対象にする(安全側)
+        return m?.Bounds;
+    }
+
+    private System.Collections.Generic.List<MonitorInfo>? _monitorCache;
 
     private void RenderMirrorMasks(OverlayState state)
     {

@@ -357,6 +357,13 @@ internal partial class MainWindow : Window
             sources.Add(new(cfg.SourceMonitor, cfg.SourceMonitor + "(接続されていません)"));
         if (!string.IsNullOrEmpty(cfg.MirrorMonitor) && targets.All(c => c.Device != cfg.MirrorMonitor))
             targets.Add(new(cfg.MirrorMonitor, cfg.MirrorMonitor + "(接続されていません)"));
+        var areas = new List<MonitorChoice> { new("", "すべてのモニター") };
+        areas.AddRange(monitors.Select(m => new MonitorChoice(m.DeviceName, m.DisplayName)));
+        var tm = _controller.Settings.TargetMonitor;
+        if (!string.IsNullOrEmpty(tm) && areas.All(c => c.Device != tm))
+            areas.Add(new(tm, tm + "(接続されていません)"));
+        TargetMonitorBox.ItemsSource = areas;
+        TargetMonitorBox.SelectedValue = tm;
         MirrorSourceBox.ItemsSource = sources;
         MirrorTargetBox.ItemsSource = targets;
         MirrorSourceBox.SelectedValue = cfg.SourceMonitor;

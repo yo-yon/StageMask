@@ -241,6 +241,11 @@ public sealed class AppSettings
     public DetectionSettings Detection { get; set; } = new();
     public AppearanceSettings Appearance { get; set; } = new();
     public ShareMirrorSettings ShareMirror { get; set; } = new();
+    /// <summary>
+    /// マスクするモニター(デバイス名)。空ならすべてのモニター。
+    /// 画面共有するモニターだけに絞ると、ほかの画面の取り込み・OCR を省ける。共有用ミラーの使用中は、取り込み元のモニターだけになる
+    /// </summary>
+    public string TargetMonitor { get; set; } = "";
     public HotkeySettings Hotkeys { get; set; } = new();
     public DiagnosticsSettings Diagnostics { get; set; } = new();
 }

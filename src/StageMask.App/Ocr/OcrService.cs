@@ -22,6 +22,8 @@ namespace StageMask.App.Ocr;
 internal sealed class OcrService
 {
     private readonly List<(string Name, OcrEngine Engine)> _engines = new();
+    /// <summary>OCR 用の大きな配列のプール。大きさの区分ごとに1つだけ残す(残す量の上限を決めるため)</summary>
+    private readonly ArrayPool<byte> _buffers = ArrayPool<byte>.Create(maxArrayLength: 256 * 1024 * 1024, maxArraysPerBucket: 1);
 
     public OcrService(bool useEnglish)
     {
@@ -67,8 +69,9 @@ internal sealed class OcrService
         // 拡大するとOCRの時間が約4倍になるが、等倍だと全体を読み直すときにGUIDなどを読み落とすことが
         // 実機で確認できたため、一般的なウィンドウの大きさ(400万ピクセル)までは拡大する
         double scale = 1;
-        // 大きな配列は ArrayPool から借りて使い回す(4K のウィンドウを2倍にすると1枚で数十MBになり、
-        // 毎回作るとメモリ使用量が大きく増えるため)
+        // 大きな配列は専用のプールから借りて使い回す(4K のウィンドウを2倍にすると1枚で数十MBになり、
+        // 毎回作るとメモリ使用量が大きく増えるため)。共有のプール(ArrayPool.Shared)は CPU コアごとに
+        // 大きな配列を溜め込み、v0.5.29〜0.5.33 でメモリが数GBまで増えたため使わない
         byte[]? upscaled = null;
         var tileBuffers = new List<byte[]>();
         try
@@ -76,7 +79,7 @@ internal sealed class OcrService
             if ((long)frame.Width * frame.Height <= UpscaleMaxPixels)
             {
                 var packed = frame.Stride == frame.Width * 4 ? frame.Pixels : frame.Crop(0, 0, frame.Width, frame.Height);
-                upscaled = ArrayPool<byte>.Shared.Rent(frame.Width * 2 * frame.Height * 2 * 4);
+                upscaled = _buffers.Rent(frame.Width * 2 * frame.Height * 2 * 4);
                 PixelUpscaler.Upscale2x(packed, frame.Width, frame.Height, upscaled);
                 frame = new CapturedFrame(upscaled, frame.Width * 2, frame.Height * 2, frame.Width * 8, frame.Origin);
                 scale = 2;
@@ -108,7 +111,7 @@ internal sealed class OcrService
                         pixels = frame.Pixels;
                     else
                     {
-                        pixels = ArrayPool<byte>.Shared.Rent(w * h * 4);
+                        pixels = _buffers.Rent(w * h * 4);
                         tileBuffers.Add(pixels);
                         for (int row = 0; row < h; row++)
                             Buffer.BlockCopy(frame.Pixels, (ty + row) * frame.Stride + tx * 4, pixels, row * w * 4, w * 4);
@@ -139,8 +142,8 @@ internal sealed class OcrService
         }
         finally
         {
-            if (upscaled is not null) ArrayPool<byte>.Shared.Return(upscaled);
-            foreach (var b in tileBuffers) ArrayPool<byte>.Shared.Return(b);
+            if (upscaled is not null) _buffers.Return(upscaled);
+            foreach (var b in tileBuffers) _buffers.Return(b);
         }
         return results;
     }

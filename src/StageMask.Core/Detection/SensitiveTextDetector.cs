@@ -182,6 +182,7 @@ public sealed class SensitiveTextDetector
         var rxText = new StringBuilder();
         var rxMap = new List<int>();
         RectD? prevBox = null;
+        var words = new List<(int Index, string Text, RectD Box)>(line.Words.Count);
         for (int wi = 0; wi < line.Words.Count; wi++)
         {
             var normalized = new StringBuilder();
@@ -189,6 +190,7 @@ public sealed class SensitiveTextDetector
             var e = System.Globalization.StringInfo.GetTextElementEnumerator(text);
             while (e.MoveNext()) normalized.Append(TextNormalizer.NormalizeChar(e.GetTextElement()));
             if (normalized.Length == 0) continue;
+            words.Add((wi, normalized.ToString(), line.Words[wi].Box));
 
             var box = line.Words[wi].Box;
             if (rxText.Length > 0 && IsAsciiAlnum(rxText[^1]) && IsAsciiAlnum(normalized[0]) &&
@@ -226,6 +228,26 @@ public sealed class SensitiveTextDetector
             AddRegexMatches(SecretPrefixRx, rx, rxMap, line, DetectionCategory.Secret, results, extendToAdjacent: true, secret: true);
         }
 
+        // 等幅フォントでは「I」「l」「i」のような細い文字の前後が広く空き、OCR がそこで単語を分けることがある
+        // (例: 「AK I AABCDEFGH I JKLMNOP」「ghp_AbCd I jK l Mn…」)。キー・テナント名はそれで取りこぼすため、
+        // 1〜2文字の英数字の断片は前後とつないだ文字列でも調べる(見つかった分を足すだけなので、隠す範囲が広がる方向にだけ働く)
+        if (_options.DetectSecret || _options.DetectIdentifier)
+        {
+            var (tight, tightMap) = BuildTightText(words);
+            if (tight != rx)
+            {
+                if (_options.DetectIdentifier)
+                    foreach (var r in IdentifierRx)
+                        AddRegexMatches(r, tight, tightMap, line, DetectionCategory.Identifier, results, extendToAdjacent: true);
+                if (_options.DetectSecret)
+                {
+                    foreach (var r in SecretRx)
+                        AddRegexMatches(r, tight, tightMap, line, DetectionCategory.Secret, results, extendToAdjacent: true, secret: true);
+                    AddRegexMatches(SecretPrefixRx, tight, tightMap, line, DetectionCategory.Secret, results, extendToAdjacent: true, secret: true);
+                }
+            }
+        }
+
         if (_options.DetectSecret && _options.DetectGenericSecret)
             for (int wi = 0; wi < line.Words.Count; wi++)
             {
@@ -239,6 +261,41 @@ public sealed class SensitiveTextDetector
     }
 
     private static bool IsAsciiAlnum(char c) => c < 128 && char.IsLetterOrDigit(c);
+
+    /// <summary>
+    /// 1〜2文字の英数字の断片を、前後の単語と空白なしでつないだ行文字列を作る。
+    /// 断片の前後でも、文字1つ分より広く空いていれば本当の空白とみなして区切る。
+    /// </summary>
+    private static (string Text, List<int> Map) BuildTightText(List<(int Index, string Text, RectD Box)> words)
+    {
+        // 1文字あたりの幅(3文字以上の英数字の単語から求める)
+        double widthSum = 0; int charSum = 0; double heightMax = 1;
+        foreach (var (_, t, b) in words)
+        {
+            heightMax = Math.Max(heightMax, b.Height);
+            if (t.Length >= 3 && t.All(c => c < 128)) { widthSum += b.Width; charSum += t.Length; }
+        }
+        double charWidth = charSum > 0 ? widthSum / charSum : heightMax * 0.5;
+
+        var text = new StringBuilder();
+        var map = new List<int>();
+        for (int k = 0; k < words.Count; k++)
+        {
+            var (wi, t, box) = words[k];
+            if (k > 0 && text.Length > 0 && IsAsciiAlnum(text[^1]) && IsAsciiAlnum(t[0]))
+            {
+                var (_, pt, pbox) = words[k - 1];
+                bool fragment = IsShortAsciiFragment(pt) || IsShortAsciiFragment(t);
+                double gap = box.X - pbox.Right;
+                bool space = HasSpaceBetween(pbox, box) && (!fragment || gap > charWidth);
+                if (space) { text.Append(' '); map.Add(-1); }
+            }
+            foreach (var c in t) { text.Append(TextNormalizer.FoldDash(c)); map.Add(wi); }
+        }
+        return (text.ToString(), map);
+    }
+
+    private static bool IsShortAsciiFragment(string t) => t.Length is >= 1 and <= 2 && t.All(IsAsciiAlnum);
 
     /// <summary>
     /// 2つの単語の間に空白(スペース)があるとみなせるか。

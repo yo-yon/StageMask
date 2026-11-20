@@ -214,6 +214,7 @@ internal sealed partial class MaskController : IDisposable
     /// <summary>設定画面での変更を反映して保存する。</summary>
     public void ApplySettings()
     {
+        _monitorCache = null;
         ApplyAppearance();
         ApplyShareMirror();
         _contentImages.Clear(); // 画像の指定が変わっていれば読み込み直す
@@ -325,6 +326,7 @@ internal sealed partial class MaskController : IDisposable
             : TimeSpan.FromMilliseconds(
                 3 * Math.Max(Math.Clamp(Settings.Detection.IntervalMs, 150, 10_000), _worker.LastCycle.TotalMilliseconds) + 1500);
 
+        var targetArea = TargetArea();
         if (MasksEnabled)
         {
             // 画面全体モード: ルールのないウィンドウにも適用する、見た目・表示は共通設定のルール
@@ -370,6 +372,10 @@ internal sealed partial class MaskController : IDisposable
                 var w = WindowEnumerator.RefreshGeometry(raw);
                 if (w is null || w.IsMinimized) continue;
                 if (w.FrameRect.Width < 8 || w.FrameRect.Height < 8) continue; // 実体のない補助ウィンドウ
+                // マスクするモニターを絞っているときは、そのモニターに少しでも重なるウィンドウだけを扱う
+                // (共有していない画面の取り込み・OCR を省き、CPU とメモリを減らす)。位置は毎フレーム取り直すので、
+                // 別の画面から対象の画面へ動かしてきたウィンドウもすぐ対象になる
+                if (targetArea is RectD area && !w.FrameRect.IntersectsWith(area)) continue;
                 // このウィンドウより手前にあるウィンドウ。そこに重なるマスクは描かない
                 // (後ろのウィンドウのマスクが、手前のウィンドウの内容を隠してしまうため)
                 var occluders = OccludersAbove(w);
@@ -749,6 +755,7 @@ internal sealed partial class MaskController : IDisposable
         }
         RaiseKeptWindow();
         _mirrorLayoutDirty = true; // モニターの構成が変わったら、ミラーの取り込み元・表示先を選び直す
+        _monitorCache = null;
         UpdateOverlayModes();
         _forceRender = true;
         Tick();
