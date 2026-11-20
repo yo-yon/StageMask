@@ -11,10 +11,23 @@
 
 ### 👉 [最新版をダウンロード(StageMask-win-x64.exe)](https://github.com/yo-yon/StageMask/releases/latest/download/StageMask-win-x64.exe)
 
-- このリンクは、いつも最新版を指します。どの版かは、[リリースページ](https://github.com/yo-yon/StageMask/releases/latest)と、起動後の操作パネルのタイトルバー(例: `StageMask v0.5.32`)で確かめられます
+- このリンクは、いつも最新版を指します。どの版かは、[リリースページ](https://github.com/yo-yon/StageMask/releases/latest)と、起動後の操作パネルのタイトルバー(例: `StageMask v0.5.33`)で確かめられます
 - インストールは不要です。ダウンロードした exe をダブルクリックすると起動します(展開や .NET のインストールも不要)
-- 初回は Windows SmartScreen の警告が出ることがあります(署名なしの試作版のため)。「詳細情報」→「実行」で起動できます
-- 今は非公開のリポジトリなので、GitHub にサインインしたブラウザーでリンクを開いてください
+- 初回は Windows SmartScreen の警告が出ることがあります(署名なしの試作版のため)。次の手順で起動できます
+
+  <details open>
+  <summary>SmartScreen の警告が出たときの起動方法</summary>
+
+  1. 「Windows によって PC が保護されました」と表示されたら、**「詳細情報」** を押します
+
+     <img src="docs/images/smartscreen-1.png" alt="SmartScreen の警告画面。「詳細情報」の位置を示している" width="400">
+
+  2. アプリ名が `StageMask-win-x64.exe` であることを確かめて、**「実行」** を押します
+
+     <img src="docs/images/smartscreen-2.png" alt="詳細情報を開いた後の画面。「実行」ボタンの位置を示している" width="400">
+
+  </details>
+
 - 前の版の exe は、[すべてのリリース](https://github.com/yo-yon/StageMask/releases)から入手できます
 
 ### 新しい版に更新する
