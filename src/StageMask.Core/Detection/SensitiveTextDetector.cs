@@ -129,7 +129,7 @@ public sealed class SensitiveTextDetector
         foreach (var line in MergeSameRowLines(lines))
         {
             if (line.Words.Count == 0) continue;
-            DetectInLine(line, results);
+            DetectInLine(FoldOcrConfusables(line), results);
         }
         return Deduplicate(results);
     }
@@ -169,6 +169,56 @@ public sealed class SensitiveTextDetector
             }
         }
         return list;
+    }
+
+    /// <summary>
+    /// 日本語の OCR は、等幅フォントの英数字を形の似た日本語の文字として返すことがある
+    /// (実機のダンプで確認: 「r」→「「」、「j」→「」」、「-」→「一」、「0」→「田」、「i」→「•」)。
+    /// その結果、単語が英数字でなくなってキー・メールアドレスの続きと見なされず、後半が見えていた。
+    /// 英数字の単語の中、または英数字の単語のすぐ隣(文字の高さ0.6倍以内)にある場合だけ、英数字に読み替える。
+    /// 日本語の文章の中のかぎかっこ・漢字はそのまま残す。
+    /// </summary>
+    internal static OcrLineBox FoldOcrConfusables(OcrLineBox line)
+    {
+        static char? Fold(char c) => c switch
+        {
+            '「' or '｢' => 'r',
+            '」' or '｣' => 'j',
+            '一' or 'ー' or '―' => '-',
+            '田' or '口' => '0',
+            '•' or '·' => 'i',
+            '丨' or '｜' => 'l',
+            _ => null,
+        };
+        static bool HasAsciiAlnum(string t) => t.Any(IsAsciiAlnum);
+        static bool AllConfusable(string t) => t.Length > 0 && t.All(c => Fold(c) is not null);
+
+        var words = line.Words;
+        if (!words.Any(w => (w.Text ?? "").Any(c => Fold(c) is not null))) return line;
+        var texts = words.Select(w => w.Text ?? "").ToArray();
+        double h = Math.Max(1, words.Max(w => w.Box.Height));
+        bool Near(int a, int b) => Math.Abs(words[b].Box.X - words[a].Box.Right) <= h * 0.6;
+        string FoldAll(string t) => new(t.Select(c => Fold(c) ?? c).ToArray());
+
+        // 1. 英数字を含む単語の中の文字(「StUVWXYZ田23456789」「sk—pro」)
+        for (int i = 0; i < texts.Length; i++)
+            if (HasAsciiAlnum(texts[i])) texts[i] = FoldAll(texts[i]);
+        // 2. 英数字の単語に挟まれた・続く短い単語(「sk-p」「「」「0j」、「sk—pro」「」」「一」)。左右両方向に広げる
+        for (int pass = 0; pass < 2; pass++)
+            for (int k = 0; k < texts.Length; k++)
+            {
+                int i = pass == 0 ? k : texts.Length - 1 - k;
+                if (texts[i].Length > 2 || !AllConfusable(texts[i])) continue;
+                bool left = i > 0 && HasAsciiAlnumOrDash(texts[i - 1]) && Near(i - 1, i);
+                bool right = i + 1 < texts.Length && HasAsciiAlnumOrDash(texts[i + 1]) && Near(i, i + 1);
+                if (left || right) texts[i] = FoldAll(texts[i]);
+            }
+        var folded = new List<OcrWordBox>(words.Count);
+        for (int i = 0; i < words.Count; i++)
+            folded.Add(texts[i] == (words[i].Text ?? "") ? words[i] : words[i] with { Text = texts[i] });
+        return new OcrLineBox(folded);
+
+        static bool HasAsciiAlnumOrDash(string t) => t.Any(c => IsAsciiAlnum(c) || c == '-');
     }
 
     private void DetectInLine(OcrLineBox line, List<DetectionResult> results)
