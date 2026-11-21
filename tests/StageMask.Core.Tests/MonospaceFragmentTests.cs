@@ -208,6 +208,15 @@ public class RealOcrDumpTests
         Assert.DoesNotContain(TestHelpers.Detect(line), h => h.Box.X < line.Words[1].Box.X - 0.5);
     }
 
+    // ---- v0.5.40 のダンプ(170%前後)----
+    [Fact]
+    public void ApiKey_KeywordMisread() => AssertRightCovered(
+        L(("ao", 23, 240, 26, 16), ("i", 56, 233, 3, 23), ("kev=Abc123Def456Gh", 80, 233, 250, 23), ("i", 336, 233, 3, 23), ("789", 345, 233, 40, 23)), 80, 385);
+
+    [Fact]
+    public void OrdinaryAssignment_IsNotSecret()
+        => Assert.DoesNotContain(TestHelpers.Detect(L(("timeout=30", 0, 0, 100, 20), ("mode=Default", 110, 0, 120, 20), ("name=SampleProject", 240, 0, 180, 20))), r => r.Category == DetectionCategory.Secret);
+
     [Fact]
     public void JapaneseQuotes_AreKept()
     {

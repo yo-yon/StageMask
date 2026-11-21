@@ -331,10 +331,10 @@ public sealed class SensitiveTextDetector
             {
                 if (i < tightAll.Length && tightAll[i] != ' ') continue;
                 // 正規化後の文字列は小文字になっているため、大文字・小文字の混在は元の単語をつないで調べる
-                string original = i - start >= 28
+                string original = i - start >= 12
                     ? string.Concat(tightAllMap.Skip(start).Take(i - start).Where(m => m >= 0).Distinct().Select(m => line.Words[m].Text))
                     : "";
-                if (original.Length >= 28 && LooksLikeRandomToken(original))
+                if ((original.Length >= 28 && LooksLikeRandomToken(original)) || LooksLikeAssignedSecret(original))
                     results.Add(new DetectionResult(DetectionCategory.Secret, original,
                         ExtendToAdjacentWords(BoxFor(start, i - start, tightAllMap, line), start, i - start, tightAllMap, line, secret: true)));
                 start = i + 1;
@@ -594,6 +594,29 @@ public sealed class SensitiveTextDetector
         }
         if (distinct.Count < 10) return false;
         if (allHex && w.Length >= 32) return true;
+        return upper >= 2 && lower >= 2 && digit >= 2;
+    }
+
+    /// <summary>
+    /// 「名前=値」「名前:値」で、値がランダムな文字列に見えるもの(12文字以上で、大文字・小文字・数字をそれぞれ2つ以上含む)。
+    /// 名前の部分を OCR が読み違えても(実機で「api_key」が「ao i kev」になった)、値の形で見つける。
+    /// </summary>
+    internal static bool LooksLikeAssignedSecret(string? token)
+    {
+        if (string.IsNullOrEmpty(token)) return false;
+        var t = token.Normalize(NormalizationForm.FormKC);
+        int sep = t.IndexOfAny(new[] { '=', ':' });
+        if (sep < 1 || sep > 24) return false;
+        var value = t[(sep + 1)..].TrimStart('=', ':', '"', '\'');
+        if (value.Length < 12) return false;
+        int upper = 0, lower = 0, digit = 0;
+        foreach (var c in value)
+        {
+            if (c is >= 'A' and <= 'Z') upper++;
+            else if (c is >= 'a' and <= 'z') lower++;
+            else if (c is >= '0' and <= '9') digit++;
+            else if (c is not ('+' or '/' or '_' or '-' or '~' or '.' or '=')) return false;
+        }
         return upper >= 2 && lower >= 2 && digit >= 2;
     }
 
