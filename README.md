@@ -5,13 +5,13 @@
 登壇・画面共有・録画のときに、**見せてはいけない画面の領域を隠す** Windows 向けのローカルアプリです。
 画面の最前面に透明なウィンドウを重ねてマスクを描くので、プロジェクター、Teams/Zoom の画面全体の共有、OBS などの録画のすべてで隠れます。処理はすべて PC の中で行い、画面の内容を外部に送信しません。
 
-> ⚠ **v0.5.42(試作版)**: Windows 実機でのビルドとテストは確認済みですが、動作確認は途中です。本番で使う前に、下の「[初回の動作確認チェックリスト](#初回の動作確認チェックリスト)」を必ず実施してください。
+> ⚠ **v0.5.43(試作版)**: Windows 実機でのビルドとテストは確認済みですが、動作確認は途中です。本番で使う前に、下の「[初回の動作確認チェックリスト](#初回の動作確認チェックリスト)」を必ず実施してください。
 
 ## ダウンロード
 
-### 👉 [最新版をダウンロード(StageMask-win-x64.exe)](https://github.com/yo-yon/StageMask/releases/latest/download/StageMask-win-x64.exe)
+### 👉 [最新版をダウンロード(StageMask.exe)](https://github.com/yo-yon/StageMask/releases/latest/download/StageMask.exe)
 
-- このリンクは、いつも最新版を指します。どの版かは、[リリースページ](https://github.com/yo-yon/StageMask/releases/latest)と、起動後の操作パネルのタイトルバー(例: `StageMask v0.5.42`)で確かめられます
+- このリンクは、いつも最新版を指します。どの版かは、[リリースページ](https://github.com/yo-yon/StageMask/releases/latest)と、起動後の操作パネルのタイトルバー(例: `StageMask v0.5.43`)で確かめられます
 - インストールは不要です。ダウンロードした exe をダブルクリックすると起動します(展開や .NET のインストールも不要)
 - 初回は Windows SmartScreen の警告が出ることがあります(署名なしの試作版のため)。次の手順で起動できます
 
@@ -22,7 +22,7 @@
 
      <img src="docs/images/smartscreen-1.png" alt="SmartScreen の警告画面。「詳細情報」の位置を示している" width="400">
 
-  2. アプリ名が `StageMask-win-x64.exe` であることを確かめて、**「実行」** を押します
+  2. アプリ名が `StageMask.exe` であることを確かめて、**「実行」** を押します(画像は v0.5.43 以前のファイル名 `StageMask-win-x64.exe` のときのものです)
 
      <img src="docs/images/smartscreen-2.png" alt="詳細情報を開いた後の画面。「実行」ボタンの位置を示している" width="400">
 
@@ -280,4 +280,4 @@ MIT License
    - **かんたん**: GitHub の「Actions」タブ → 左の「release」→「Run workflow」→「Run workflow」。ブラウザーやスマホのアプリからでも実行できる。`<Version>` の番号でタグ(例: `v0.5.9`)を自動で作る
    - **コマンド**: 同じ番号のタグを付けて push する(`git tag v0.5.9` → `git push origin v0.5.9`)。タグと `<Version>` が違うと途中で止まる
 3. 数分で、テスト → exe の作成 → [リリースページ](../../releases) の作成までが自動で終わる。同じ番号のリリースが既にある場合は止まる(上書きしない)
-4. 作ったリリースは「最新(Latest)」になり、exe のファイル名は版によらず `StageMask-win-x64.exe` に揃える。README の「最新版をダウンロード」のリンク(`releases/latest/download/StageMask-win-x64.exe`)が自動で新しい版を指すようにするため。プレリリースにすると `releases/latest` の対象にならないので、プレリリースにはしない
+4. 作ったリリースは「最新(Latest)」になり、exe のファイル名は版によらず `StageMask.exe` に揃える。README の「最新版をダウンロード」のリンク(`releases/latest/download/StageMask.exe`)が自動で新しい版を指すようにするため。プレリリースにすると `releases/latest` の対象にならないので、プレリリースにはしない

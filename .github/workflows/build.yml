@@ -31,5 +31,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: StageMask-win-x64
+          name: StageMask
           path: publish/
