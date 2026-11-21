@@ -103,7 +103,9 @@ public sealed class SensitiveTextDetector
     /// 書き出しを見つけたら、そこから続く断片(空白をはさんでいても)をまとめて隠す。
     /// </summary>
     private static readonly Regex SecretPrefixRx = new(
-        @"\b(?:sk-[a-z0-9]|gh[pousr]_|github_pat_|xox[abprs]-|akia[0-9a-z]{4}|aiza[0-9a-z_\-]{4})", Opt, RegexTimeout);
+        @"\b(?:sk-[a-z0-9]|gh[pousr]_|github_pat_|xox[abprs]-|akia[0-9a-z]{4}|aiza[0-9a-z_\-]{4}" +
+        // 大きい文字では「_」「-」が下に離れて読み落とされ、「ghp AbCd…」「sk proj…」になることがある
+        @"|gh[pousr] ?(?=[a-z0-9]{6})|sk ?pro[j|\]1l])", Opt, RegexTimeout);
 
     // 汎用の「長くてランダムな文字列」(単語単位で判定する)
     private static readonly Regex GenericTokenRx = new(@"^[A-Za-z0-9+/_\-~=.]{28,}$", RegexOptions.CultureInvariant | RegexOptions.Compiled, RegexTimeout);
@@ -497,14 +499,29 @@ public sealed class SensitiveTextDetector
     private static RectD ExtendWordRange(RectD box, int first, int last, OcrLineBox line, bool keyFragments = true, bool secret = false)
     {
         double h = Math.Max(1, line.Words.Max(w => w.Box.Height));
+        double pitch = CharPitch(line, h);
         if (secret)
         {
-            for (int k = 0; k < 6 && last + 1 < line.Words.Count; k++)
+            for (int k = 0; k < 16 && last + 1 < line.Words.Count; k++)
             {
                 var a = line.Words[last].Box; var b = line.Words[last + 1];
                 double gap = b.Box.X - a.Right;
-                bool touching = gap <= h * 0.2;
-                if (!IsAsciiWord(b.Text) || gap > h * 3.0 || (!touching && LooksPlainWord(b.Text))) break;
+                // 等幅フォントの細い文字(I・l・j・r など)の前後は、空白より狭いすき間で OCR が単語を分ける。
+                // そのすき間(文字1つ分の8割まで)なら、「Ij」「roj」のようにふつうの単語に見える断片でもキーの続きとみなす
+                bool tight = gap <= h * 0.2 || gap <= pitch * 0.8;
+                bool shortPiece = (b.Text?.Length ?? 0) <= 3 && gap < pitch;
+                if (!IsAsciiWord(b.Text) || gap > h * 3.0 || (!tight && !shortPiece && LooksPlainWord(b.Text))) break;
+                box = box.Union(b.Box); last++;
+            }
+        }
+        else if (!keyFragments)
+        {
+            // メールアドレスのドメインの途中で単語が分かれた場合(「yoh@contoso.onmic」「rosoft.com」)。
+            // すぐ右隣(文字1つ分以内)の、「.」を含むドメインの断片だけ含める(「for」のような後ろの単語は含めない)
+            for (int k = 0; k < 3 && last + 1 < line.Words.Count; k++)
+            {
+                var a = line.Words[last].Box; var b = line.Words[last + 1];
+                if (b.Box.X - a.Right > pitch * 1.0 || !LooksDomainFragment(b.Text)) break;
                 box = box.Union(b.Box); last++;
             }
         }
@@ -531,6 +548,26 @@ public sealed class SensitiveTextDetector
         if (!keyFragments && first - 1 >= 0 && LooksLocalPartFragment(line.Words[first - 1], line.Words[first]))
             box = box.Union(line.Words[first - 1].Box);
         return box;
+    }
+
+    /// <summary>行の英数字の単語(3文字以上)から求めた、1文字あたりの幅。</summary>
+    private static double CharPitch(OcrLineBox line, double h)
+    {
+        double width = 0; int chars = 0;
+        foreach (var w in line.Words)
+        {
+            var t = w.Text ?? "";
+            if (t.Length >= 3 && IsAsciiWord(t)) { width += w.Box.Width; chars += t.Length; }
+        }
+        return chars > 0 ? width / chars : h * 0.5;
+    }
+
+    private static bool LooksDomainFragment(string? w)
+    {
+        if (string.IsNullOrEmpty(w) || !w.Contains('.')) return false;
+        foreach (var c in w.Normalize(NormalizationForm.FormKC))
+            if (!(c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '.' or '-')) return false;
+        return true;
     }
 
     /// <summary>
