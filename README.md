@@ -22,7 +22,7 @@
 
      <img src="docs/images/smartscreen-1.png" alt="SmartScreen の警告画面。「詳細情報」の位置を示している" width="400">
 
-  2. アプリ名が `StageMask.exe` であることを確かめて、**「実行」** を押します(画像は v0.5.43 以前のファイル名 `StageMask-win-x64.exe` のときのものです)
+  2. アプリ名が `StageMask.exe` であることを確かめて、**「実行」** を押します(画像は v0.5.42 以前のファイル名 `StageMask-win-x64.exe` のときのものです)
 
      <img src="docs/images/smartscreen-2.png" alt="詳細情報を開いた後の画面。「実行」ボタンの位置を示している" width="400">
 
