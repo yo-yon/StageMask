@@ -278,7 +278,39 @@ internal partial class MainWindow : Window
             "OCR の読み取り結果を保存", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
         if (r != MessageBoxResult.OK) return;
         var path = _controller.StartOcrDump(10);
-        OcrDumpText.Text = "保存中(10秒): " + path;
+        _ocrDumpPath = path;
+        OcrDumpOpenButton.Visibility = Visibility.Collapsed;
+        _ocrDumpTimer?.Stop();
+        var until = DateTime.Now.AddSeconds(10.5);
+        _ocrDumpTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(0.5) };
+        _ocrDumpTimer.Tick += (_, _) =>
+        {
+            var left = (int)Math.Ceiling((until - DateTime.Now).TotalSeconds);
+            if (left > 0)
+            {
+                OcrDumpText.Text = $"保存中(あと{left}秒)…";
+                return;
+            }
+            _ocrDumpTimer!.Stop();
+            int frames = 0;
+            try { frames = System.IO.File.ReadLines(path).Count(l => l.StartsWith("=== ", StringComparison.Ordinal)); } catch { }
+            OcrDumpText.Text = frames > 0
+                ? $"保存完了({frames} 回分): {path}"
+                : $"保存しましたが、読み取り結果がありませんでした。自動検出が開始されているか、対象のウィンドウが画面に出ているかを確かめてください: {path}";
+            OcrDumpOpenButton.Visibility = Visibility.Visible;
+        };
+        OcrDumpText.Text = "保存中(あと10秒)…";
+        _ocrDumpTimer.Start();
+    }
+
+    private DispatcherTimer? _ocrDumpTimer;
+    private string? _ocrDumpPath;
+
+    private void OcrDumpOpen_Click(object sender, RoutedEventArgs e)
+    {
+        if (_ocrDumpPath is null || !System.IO.File.Exists(_ocrDumpPath)) return;
+        // 保存したファイルを選んだ状態でエクスプローラーを開く
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"/select,\"{_ocrDumpPath}\"") { UseShellExecute = true });
     }
 
     private void ApplyDetection_Click(object sender, RoutedEventArgs e)
