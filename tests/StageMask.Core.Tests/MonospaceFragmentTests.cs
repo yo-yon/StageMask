@@ -187,6 +187,27 @@ public class RealOcrDumpTests
     public void WrappedKey_SplitIntoTwoShortWords() => AssertRightCovered(
         L(("AbCdEfGhI", 22, 145, 114, 21), ("jKlMn0pQrStUvWxYz0123456789", 141, 145, 348, 24)), 22, 489);
 
+    // ---- v0.5.38 のダンプ(110%・120%)----
+    [Fact]
+    public void TenantEmail_AtCReadAsKanji() => AssertRightCovered(
+        L(("yoh", 22, 172, 24, 15), ("配", 46, 170, 15, 16), ("ontoso.", 62, 173, 53, 13), ("onm", 118, 177, 24, 9), ("i", 145, 173, 2, 12),
+          ("crosof", 150, 172, 46, 14), ("t", 198, 173, 5, 13), (".", 208, 183, 3, 3), ("com", 214, 177, 24, 9)), 22, 238);
+
+    [Fact]
+    public void TenantEmail_HeavilyGarbled() => AssertRightCovered(
+        L(("YOh", 22, 182, 26, 17), ("00nt0S0.", 58, 183, 69, 14), ("C", 166, 187, 8, 10), ("「", 176, 187, 6, 10), ("OSOft", 184, 182, 43, 15), (".", 232, 194, 3, 3)), 22, 227); // 末尾の「.」だけは対象外
+
+    [Fact]
+    public void MicrosoftLearnUrl_IsNotMasked()
+        => Assert.Empty(TestHelpers.Detect(TestHelpers.Line("see learn.microsoft.com for details")));
+
+    [Fact]
+    public void TenantLabel_IsNotMasked()
+    {
+        var line = TestHelpers.Line("Tenant: contoso.onmicrosoft.com");
+        Assert.DoesNotContain(TestHelpers.Detect(line), h => h.Box.X < line.Words[1].Box.X - 0.5);
+    }
+
     [Fact]
     public void JapaneseQuotes_AreKept()
     {

@@ -52,6 +52,9 @@ public sealed class SensitiveTextDetector
         // 行末の「.com」を OCR が読み落とすことがあるため、「.com」はなくても一致させる
         new(@"[a-z0-9\-]+\." + Spaced("onmicrosoft") + @"(?: ?\. ?c ?[o0] ?m)?", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\." + Spaced("sharepoint") + @"(?: ?\. ?c ?[o0] ?m)?", Opt, RegexTimeout),
+        // 「onmi」まで読み落とされ「contoso. crosoft」となった場合(実機 120%)。
+        // 「.」の直後が「crosoft」で始まるものだけなので、「learn.microsoft.com」などは一致しない
+        new(@"[a-z0-9\-]+\. ?c ?r ?[o0] ?s ?[o0] ?[ft] ?t\b", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.crm\d*\.dynamics\.com", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.(?:blob|queue|table|file|dfs)\.core\.windows\.net", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.vault\.azure\.net", Opt, RegexTimeout),
@@ -358,6 +361,25 @@ public sealed class SensitiveTextDetector
         {
             var r = results[i];
             if (r.Category == DetectionCategory.NgWord) continue;
+            // テナントのホスト名(「contoso.onmicrosoft.com」)の直前は、UPN のユーザー部分(「yoh@」)のことが多い。
+            // OCR が「@c」を「配」と読んだり「@」を落としたりすると別の単語になるため、
+            // 文字1.5個分以内で隣り合う短い単語を2つまで含める(「Tenant:」のようなラベルは含めない)
+            if (r.Category == DetectionCategory.Identifier && r.MatchedText.Contains('.'))
+            {
+                var box = r.Box;
+                for (int k = 0; k < 2; k++)
+                {
+                    OcrWordBox? prev = null;
+                    foreach (var w in line.Words)
+                        if (w.Box.Right <= box.X + 0.5 && (prev is null || w.Box.Right > prev.Box.Right)) prev = w;
+                    if (prev is null) break;
+                    var t = prev.Text ?? "";
+                    if (t.Length == 0 || t.Length > 12 || t[^1] is ':' or '=' or '：' or '＝' || box.X - prev.Box.Right > pitch * 1.5) break;
+                    if (!(IsAsciiWord(t) || t.Length == 1)) break;
+                    box = box.Union(prev.Box);
+                }
+                r = results[i] = r with { Box = box };
+            }
             double limit = Math.Max(0, r.Box.X - pitch * 5);
             foreach (var w in line.Words)
                 if (w.Box.Right <= r.Box.X + 0.5 && w.Box.Right > limit) limit = w.Box.Right + pitch * 0.3;
