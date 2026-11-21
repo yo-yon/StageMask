@@ -15,7 +15,7 @@
     <ApplicationIcon>Assets\StageMask.ico</ApplicationIcon>
     <AssemblyName>StageMask</AssemblyName>
     <RootNamespace>StageMask.App</RootNamespace>
-    <Version>0.5.37</Version>
+    <Version>0.5.38</Version>
     <Product>StageMask</Product>
     <Description>登壇・画面共有中に見せてはいけない領域を隠すオーバーレイツール</Description>
   </PropertyGroup>

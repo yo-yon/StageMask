@@ -147,6 +147,46 @@ public class RealOcrDumpTests
     public void Zoom170_OpenAiKeyTail() => AssertRightCovered(
         L(("sk—pro", 23, 118, 76, 23), ("」", 102, 123, 8, 18), ("一", 113, 127, 13, 3)), 23, 126);
 
+    // ---- v0.5.37 のダンプ(100%前後・120%・130%・180%)----
+    [Fact]
+    public void GitHubToken_UnderscoreReadAsHyphen_Split() => AssertRightCovered(
+        L(("ghp-AbCdEfGhI", 22, 124, 102, 16), ("j", 127, 125, 4, 14), ("K", 134, 124, 8, 13), ("lMnOpQrStUvWxYz0123456789", 145, 124, 196, 15)), 22, 341);
+
+    [Fact]
+    public void ApiKey_SplitAndGhReadAsKanji() => AssertRightCovered(
+        L(("ap", 22, 161, 16, 10), ("i", 41, 157, 2, 12), ("key:Abc123Def456", 54, 156, 127, 15), ("田", 182, 156, 16, 14), ("i", 201, 157, 2, 12), ("789", 206, 156, 23, 14)), 22, 229);
+
+    [Fact]
+    public void ApiKey_ShortFirstValuePiece() => AssertRightCovered(
+        L(("ap", 22, 169, 17, 12), ("i", 43, 164, 2, 14), ("key=Abcl", 58, 164, 68, 17), ("23Def456Gh", 130, 164, 89, 15), ("i", 223, 164, 2, 14), ("789", 229, 164, 26, 15)), 22, 255);
+
+    [Fact]
+    public void Akia_WithUmlaut() => AssertRightCovered(
+        L(("AK", 22, 146, 17, 14), ("IÄABCDEFGHIJKLMNOP", 42, 144, 159, 17)), 22, 201);
+
+    [Fact]
+    public void TenantEmail_PerCharacterWithKatakanaDot() => AssertRightCovered(
+        L(("0", 31, 172, 6, 8), ("h@C", 39, 168, 22, 12), ("0", 63, 172, 6, 8), ("n", 71, 172, 6, 8), ("t", 79, 169, 4, 11), ("0", 87, 172, 6, 8),
+          ("S", 95, 172, 6, 8), ("0", 103, 172, 6, 8), ("・", 113, 176, 3, 3), ("0", 119, 172, 6, 8), ("n", 127, 172, 6, 8), ("m", 135, 172, 6, 8),
+          ("i", 145, 169, 2, 10), ("C", 151, 172, 6, 8), ("r", 160, 172, 5, 8), ("0", 167, 172, 6, 8), ("S", 175, 172, 6, 8), ("0", 183, 172, 6, 8),
+          ("f", 191, 168, 4, 12), ("t", 199, 169, 4, 11), (".", 209, 176, 3, 3), ("C", 215, 172, 6, 8), ("0", 223, 172, 6, 8), ("m", 231, 172, 6, 8)), 23, 237);
+
+    [Fact]
+    public void TenantEmail_AtReadAsUmlaut() => AssertRightCovered(
+        L(("yohöcontoso", 22, 155, 76, 14), ("・", 101, 164, 3, 3), ("onmicrosoft", 106, 157, 75, 11), (".com", 185, 160, 25, 8)), 22, 210);
+
+    [Fact]
+    public void TenantEmail_ComMissing_FirstLetterMissing() => AssertRightCovered(
+        L(("oh@contoso", 33, 188, 98, 16), (".", 136, 200, 3, 3), ("onmic", 143, 188, 48, 15), ("「", 194, 193, 6, 10), ("OSOft", 203, 188, 47, 15), (".", 256, 200, 3, 3)), 23, 259);
+
+    [Fact]
+    public void TenantHost_UserPartNotRead() => AssertRightCovered(
+        L(("contoso.", 54, 173, 61, 13), ("onm", 118, 177, 24, 9), ("i", 145, 173, 2, 12), ("crosof", 150, 172, 46, 14), ("t", 198, 173, 5, 13), (".", 208, 183, 3, 3), ("com", 214, 177, 24, 9)), 22, 238);
+
+    [Fact]
+    public void WrappedKey_SplitIntoTwoShortWords() => AssertRightCovered(
+        L(("AbCdEfGhI", 22, 145, 114, 21), ("jKlMn0pQrStUvWxYz0123456789", 141, 145, 348, 24)), 22, 489);
+
     [Fact]
     public void JapaneseQuotes_AreKept()
     {

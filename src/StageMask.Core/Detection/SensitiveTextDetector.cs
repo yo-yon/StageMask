@@ -49,8 +49,9 @@ public sealed class SensitiveTextDetector
         // Microsoft 365 / Power Platform / Azure のテナント固有ホスト名
         // 小さい文字ではOCRが「sharepo int.com」のように単語の途中で分けることがあるため、
         // ドメイン名の文字の間に区切り(空白)が1つずつ入っていても一致させる
-        new(@"[a-z0-9\-]+\." + Spaced("onmicrosoft.com"), Opt, RegexTimeout),
-        new(@"[a-z0-9\-]+\." + Spaced("sharepoint.com"), Opt, RegexTimeout),
+        // 行末の「.com」を OCR が読み落とすことがあるため、「.com」はなくても一致させる
+        new(@"[a-z0-9\-]+\." + Spaced("onmicrosoft") + @"(?: ?\. ?c ?[o0] ?m)?", Opt, RegexTimeout),
+        new(@"[a-z0-9\-]+\." + Spaced("sharepoint") + @"(?: ?\. ?c ?[o0] ?m)?", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.crm\d*\.dynamics\.com", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.(?:blob|queue|table|file|dfs)\.core\.windows\.net", Opt, RegexTimeout),
         new(@"[a-z0-9\-]+\.vault\.azure\.net", Opt, RegexTimeout),
@@ -79,7 +80,7 @@ public sealed class SensitiveTextDetector
     {
         // OpenAI / Anthropic 形式のキー。小さい文字では「proj」の「j」を「|」「]」などと読み違えることがあるため1文字は許容する
         new(@"sk-(?:pro.-?|ant-[a-z0-9]+-)?[a-z0-9_\-]{20,}", Opt, RegexTimeout),
-        new(@"gh[pousr]_[a-z0-9]{30,}", Opt, RegexTimeout),                               // GitHub トークン
+        new(@"gh[pousr][_\-][a-z0-9]{30,}", Opt, RegexTimeout),                               // GitHub トークン
         new(@"github_pat_[a-z0-9_]{30,}", Opt, RegexTimeout),                             // GitHub fine-grained PAT
         new(@"akia[0-9a-z]{16}", Opt, RegexTimeout),                                      // AWS アクセスキーID
         new(@"aiza[0-9a-z_\-]{30,}", Opt, RegexTimeout),                                  // Google API キー
@@ -89,9 +90,9 @@ public sealed class SensitiveTextDetector
         new(@"-----begin[a-z ]*private ?key-----", Opt, RegexTimeout),                    // PEM 秘密鍵
         // キー=値 形式(接続文字列・設定ファイル)。値の部分まで含めてマスクする。
         new(@"(?:accountkey|sharedaccesskey|sharedaccesssignature|clientsecret|client_secret|client-secret|" +
-            @"apikey|api_key|api-key|subscription-key|password|passwd|pwd|secret|token|sig)" +
+            @"api[ _\-]?key|subscription-key|password|passwd|pwd|secret|token|sig)" +
             // 区切りは「=」「:」。小さい文字ではOCRが「=」を「-」と読むことがあるため、値に数字を含む場合に限り「-」も許容する
-            @"\s?(?:[=:""']+|-(?=[^;,&""'\s]*\d))\s?[^;,&""'\s]{6,}", Opt, RegexTimeout),
+            @"\s?(?:[=:""']+|-(?=[^;,&""'\s]*\d))\s?[^;,&""'\s]{4,}", Opt, RegexTimeout),
         // Entra ID のクライアントシークレットでよく見られる形式(xxx8Q~...)。
         // ※公式に形式が規定されたものではなく、観察に基づくパターン。
         new(@"[a-z0-9_\-.]{3}\dq~[a-z0-9_.\-~]{31,}", Opt, RegexTimeout),
@@ -103,7 +104,7 @@ public sealed class SensitiveTextDetector
     /// 書き出しを見つけたら、そこから続く断片(空白をはさんでいても)をまとめて隠す。
     /// </summary>
     private static readonly Regex SecretPrefixRx = new(
-        @"\b(?:sk-[a-z0-9]|gh[pousr]_|github_pat_|xox[abprs]-|akia[0-9a-z]{4}|aiza[0-9a-z_\-]{4}" +
+        @"\b(?:sk-[a-z0-9]|gh[pousr][_\-]|github_pat_|xox[abprs]-|akia[0-9a-z]{4}|aiza[0-9a-z_\-]{4}" +
         // 大きい文字では「_」「-」が下に離れて読み落とされ、「ghp AbCd…」「sk proj…」になることがある
         @"|gh[pousr] ?(?=[a-z0-9]{6})|sk ?pro[j|\]1l])", Opt, RegexTimeout);
 
@@ -186,7 +187,8 @@ public sealed class SensitiveTextDetector
             '」' or '｣' => 'j',
             '一' or 'ー' or '―' => '-',
             '田' or '口' => '0',
-            '•' or '·' => 'i',
+            '•' => 'i',
+            '・' or '･' or '·' or '．' => '.',
             '丨' or '｜' => 'l',
             _ => null,
         };
@@ -194,15 +196,16 @@ public sealed class SensitiveTextDetector
         static bool AllConfusable(string t) => t.Length > 0 && t.All(c => Fold(c) is not null);
 
         var words = line.Words;
-        if (!words.Any(w => (w.Text ?? "").Any(c => Fold(c) is not null))) return line;
+        if (!words.Any(w => (w.Text ?? "").Any(c => Fold(c) is not null || (c is >= '\u00C0' and <= '\u024F')))) return line;
         var texts = words.Select(w => w.Text ?? "").ToArray();
         double h = Math.Max(1, words.Max(w => w.Box.Height));
         bool Near(int a, int b) => Math.Abs(words[b].Box.X - words[a].Box.Right) <= h * 0.6;
         string FoldAll(string t) => new(t.Select(c => Fold(c) ?? c).ToArray());
 
-        // 1. 英数字を含む単語の中の文字(「StUVWXYZ田23456789」「sk—pro」)
+        // 1. 英数字を含む単語の中の文字(「StUVWXYZ田23456789」「sk—pro」)。
+        //    「IÄABCD…」「yohöcontoso」のような、英字に付いた点(ウムラウトなど)も外す
         for (int i = 0; i < texts.Length; i++)
-            if (HasAsciiAlnum(texts[i])) texts[i] = FoldAll(texts[i]);
+            if (HasAsciiAlnum(texts[i])) texts[i] = StripMarks(FoldAll(texts[i]));
         // 2. 英数字の単語に挟まれた・続く短い単語(「sk-p」「「」「0j」、「sk—pro」「」」「一」)。左右両方向に広げる
         for (int pass = 0; pass < 2; pass++)
             for (int k = 0; k < texts.Length; k++)
@@ -219,10 +222,19 @@ public sealed class SensitiveTextDetector
         return new OcrLineBox(folded);
 
         static bool HasAsciiAlnumOrDash(string t) => t.Any(c => IsAsciiAlnum(c) || c == '-');
+        static string StripMarks(string t)
+        {
+            if (!t.Any(c => c is >= '\u00C0' and <= '\u024F')) return t;
+            var sb = new StringBuilder(t.Length);
+            foreach (var c in t.Normalize(NormalizationForm.FormD))
+                if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark) sb.Append(c);
+            return sb.ToString().Normalize(NormalizationForm.FormC);
+        }
     }
 
     private void DetectInLine(OcrLineBox line, List<DetectionResult> results)
     {
+        int firstResult = results.Count;
         // 正規化した行文字列と、各文字がどの単語に由来するかの対応表を作る。
         // - ngText: 単語を空白なしで連結(日本語OCRは1文字ずつ単語になるため)
         // - rxText: 英数字どうしが隣り合い、かつ単語の間に実際の空白がある場合だけ区切り(空白)を入れる。
@@ -301,15 +313,57 @@ public sealed class SensitiveTextDetector
         }
 
         if (_options.DetectSecret && _options.DetectGenericSecret)
+        {
             for (int wi = 0; wi < line.Words.Count; wi++)
             {
                 var w = line.Words[wi];
                 if (LooksLikeRandomToken(w.Text))
                     results.Add(new DetectionResult(DetectionCategory.Secret, w.Text, ExtendWordRange(w.Box, wi, wi, line, secret: true)));
             }
+            // 大きい文字では細い文字の前後で OCR がキーを分ける(「AbCdEfGhI」「jKlMn0p…789」)。
+            // 1つずつでは短くて判定できないため、すき間なくつないだ文字列でも判定する
+            var (tightAll, tightAllMap) = BuildTightText(words);
+            int start = 0;
+            for (int i = 0; i <= tightAll.Length; i++)
+            {
+                if (i < tightAll.Length && tightAll[i] != ' ') continue;
+                // 正規化後の文字列は小文字になっているため、大文字・小文字の混在は元の単語をつないで調べる
+                string original = i - start >= 28
+                    ? string.Concat(tightAllMap.Skip(start).Take(i - start).Where(m => m >= 0).Distinct().Select(m => line.Words[m].Text))
+                    : "";
+                if (original.Length >= 28 && LooksLikeRandomToken(original))
+                    results.Add(new DetectionResult(DetectionCategory.Secret, original,
+                        ExtendToAdjacentWords(BoxFor(start, i - start, tightAllMap, line), start, i - start, tightAllMap, line, secret: true)));
+                start = i + 1;
+            }
+        }
 
         if (_options.DetectNgWords && _ngWords.Count > 0)
             AddNgWordMatches(ng, ngMap, line, results);
+
+        PadLeftIntoBlank(line, results, firstResult);
+    }
+
+    /// <summary>
+    /// OCR は先頭の数文字を読み落とすことがある(実機で「yoh@contoso」の「yoh@」や「y」が単語として返らなかった)。
+    /// 見つかった範囲の左側に単語がなく空いている場合は、文字5つ分まで左に広げて隠す(何もない所を隠すだけなので害は少ない)。
+    /// 左に単語がある場合は、その単語の手前までにする。
+    /// </summary>
+    private static void PadLeftIntoBlank(OcrLineBox line, List<DetectionResult> results, int firstResult)
+    {
+        if (results.Count <= firstResult) return;
+        double h = Math.Max(1, line.Words.Max(w => w.Box.Height));
+        double pitch = CharPitch(line, h);
+        for (int i = firstResult; i < results.Count; i++)
+        {
+            var r = results[i];
+            if (r.Category == DetectionCategory.NgWord) continue;
+            double limit = Math.Max(0, r.Box.X - pitch * 5);
+            foreach (var w in line.Words)
+                if (w.Box.Right <= r.Box.X + 0.5 && w.Box.Right > limit) limit = w.Box.Right + pitch * 0.3;
+            if (r.Box.X - limit < pitch * 3) continue;
+            results[i] = r with { Box = new RectD(limit, r.Box.Y, r.Box.Right - limit, r.Box.Height) };
+        }
     }
 
     private static bool IsAsciiAlnum(char c) => c < 128 && char.IsLetterOrDigit(c);
