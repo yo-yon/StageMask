@@ -35,11 +35,17 @@ public sealed class DetectionHoldBuffer<TPayload>
 
             list.RemoveAll(i => i.ExpiresUtc <= nowUtc);
 
+            // 今回登録した項目どうしは置き換えない。
+            // 以前は「ghp AbCd…」の行全体(大)と「AbCd…」(小)が同時に見つかると、小が大を置き換えてしまい、
+            // 行頭の「ghp」が隠れなかった(実機 190%)。置き換えるのは前回までの項目だけにする
+            var added = new List<Item>();
             foreach (var (rect, cat, payload) in detections)
             {
                 // ほぼ同じ位置の既存項目は期限を延長して置き換える
-                list.RemoveAll(i => IsSameRegion(i.Rect, rect));
-                list.Add(new Item(rect, cat, nowUtc + hold, payload));
+                list.RemoveAll(i => !added.Contains(i) && IsSameRegion(i.Rect, rect));
+                var item = new Item(rect, cat, nowUtc + hold, payload);
+                list.Add(item);
+                added.Add(item);
             }
         }
     }

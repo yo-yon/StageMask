@@ -224,3 +224,31 @@ public class RealOcrDumpTests
         Assert.Empty(TestHelpers.Detect(TestHelpers.CharLine("「設定」を開く")));
     }
 }
+
+public class HoldBufferSameBatchTests
+{
+    [Xunit.Fact]
+    public void LargerAndContainedDetections_InSameBatch_AreBothKept()
+    {
+        // 実機 190%: 「ghp AbCd…」(行頭から)と「AbCd…」(途中から)が同時に見つかった
+        var buf = new DetectionHoldBuffer<object>();
+        var now = System.DateTime.UtcNow;
+        buf.Update(1, new (RectD, DetectionCategory, object?)[]
+        {
+            (new RectD(23, 149, 558, 27), DetectionCategory.Secret, null),
+            (new RectD(78, 149, 503, 27), DetectionCategory.Secret, null),
+        }, now, System.TimeSpan.FromSeconds(2));
+        var active = buf.GetActive(1, now);
+        Assert.Contains(active, i => i.Rect.X <= 23.5);
+    }
+
+    [Xunit.Fact]
+    public void SameRegion_FromEarlierUpdate_IsReplaced()
+    {
+        var buf = new DetectionHoldBuffer<object>();
+        var now = System.DateTime.UtcNow;
+        buf.Update(1, new (RectD, DetectionCategory, object?)[] { (new RectD(0, 0, 100, 20), DetectionCategory.Secret, null) }, now, System.TimeSpan.FromSeconds(2));
+        buf.Update(1, new (RectD, DetectionCategory, object?)[] { (new RectD(1, 0, 100, 20), DetectionCategory.Secret, null) }, now.AddMilliseconds(100), System.TimeSpan.FromSeconds(2));
+        Assert.Single(buf.GetActive(1, now.AddMilliseconds(100)));
+    }
+}
